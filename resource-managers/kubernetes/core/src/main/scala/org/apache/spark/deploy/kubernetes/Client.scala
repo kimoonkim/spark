@@ -152,7 +152,7 @@ private[spark] class Client(
                 driverService)
             } catch {
               case e: Throwable =>
-                cleanupPodAndService(kubernetesClient, driverPod, driverService)
+                cleanupPodAndService(kubernetesClient, driverPod, driverService, loggingWatch)
                 throw new SparkException("Failed to set owner references to the driver pod.", e)
             }
             try {
@@ -169,7 +169,7 @@ private[spark] class Client(
             } catch {
               case e: Throwable =>
                 cleanupPodAndService(kubernetesClient, driverPod,
-                  ownerReferenceConfiguredDriverService)
+                  ownerReferenceConfiguredDriverService, loggingWatch)
                 throw new SparkException("Failed to submit the application to the driver pod.", e)
             }
           }
@@ -193,13 +193,15 @@ private[spark] class Client(
   private def cleanupPodAndService(
       kubernetesClient: KubernetesClient,
       driverPod: Pod,
-      driverService: Service): Unit = {
+      driverService: Service,
+      watcher: Watcher[Pod]): Unit = {
     Utils.tryLogNonFatalError {
       kubernetesClient.services().delete(driverService)
     }
     Utils.tryLogNonFatalError {
       kubernetesClient.pods().delete(driverPod)
     }
+    watcher.onClose(new KubernetesClientException("Cleaning up pod and service"))
   }
 
   private def submitApplicationToDriverServer(
