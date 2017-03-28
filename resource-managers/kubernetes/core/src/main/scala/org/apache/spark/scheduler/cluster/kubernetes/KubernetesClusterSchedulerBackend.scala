@@ -244,10 +244,10 @@ private[spark] class KubernetesClusterSchedulerBackend(
           runningExecutorPods += ((executorId, pod))
           val podReadyFuture = SettableFuture.create[Pod]
           val podWatcher = new ExecutorPodReadyWatcher(podReadyFuture)
-          Utils.tryWithResource(kubernetesClient
+          kubernetesClient
             .pods()
             .withName(pod.getMetadata.getName)
-            .watch(podWatcher))
+            .watch(podWatcher)
         }
       }
       totalExpectedExecutors.set(requestedTotal)
