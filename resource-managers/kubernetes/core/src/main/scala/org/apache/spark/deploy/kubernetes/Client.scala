@@ -519,6 +519,8 @@ private[spark] class Client(
           .find(status =>
             status.getName == DRIVER_CONTAINER_NAME && status.getReady)
           .foreach { _ => resolvedDriverPod.set(pod) }
+        val nodeName = pod.getSpec.getNodeName
+        logInfo(s"Driver pod $pod ready, launched at $nodeName")
       }
     }
 

@@ -18,10 +18,13 @@ package org.apache.spark.scheduler.cluster.kubernetes
 
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
+import com.google.common.util.concurrent.SettableFuture
 import io.fabric8.kubernetes.api.model.{ContainerPortBuilder, EnvVarBuilder, Pod, QuantityBuilder}
+import io.fabric8.kubernetes.client.{KubernetesClientException, Watcher}
+import io.fabric8.kubernetes.client.Watcher.Action
+
 import scala.collection.JavaConverters._
 import scala.concurrent.{ExecutionContext, Future}
-
 import org.apache.spark.{SparkContext, SparkException}
 import org.apache.spark.deploy.kubernetes.KubernetesClientBuilder
 import org.apache.spark.deploy.kubernetes.config._
@@ -236,7 +239,15 @@ private[spark] class KubernetesClusterSchedulerBackend(
           + s" additional executors, expecting total $requestedTotal and currently" +
           s" expected ${totalExpectedExecutors.get}")
         for (i <- 0 until (requestedTotal - totalExpectedExecutors.get)) {
-          runningExecutorPods += allocateNewExecutorPod()
+          val (executorId, pod) = allocateNewExecutorPod()
+          logInfo(s"Allocated $executorId $pod")
+          runningExecutorPods += ((executorId, pod))
+          val podReadyFuture = SettableFuture.create[Pod]
+          val podWatcher = new ExecutorPodReadyWatcher(podReadyFuture)
+          Utils.tryWithResource(kubernetesClient
+            .pods()
+            .withName(pod.getMetadata.getName)
+            .watch(podWatcher))
         }
       }
       totalExpectedExecutors.set(requestedTotal)
@@ -254,6 +265,27 @@ private[spark] class KubernetesClusterSchedulerBackend(
       }
     }
     true
+  }
+
+  private class ExecutorPodReadyWatcher(resolvedExecutorPod: SettableFuture[Pod])
+    extends Watcher[Pod] {
+    override def eventReceived(action: Action, pod: Pod): Unit = {
+      if ((action == Action.ADDED || action == Action.MODIFIED)
+        && pod.getStatus.getPhase == "Running"
+        && !resolvedExecutorPod.isDone) {
+        pod.getStatus
+          .getContainerStatuses
+          .asScala
+          .find(status => status.getReady)
+          .foreach { _ => resolvedExecutorPod.set(pod) }
+        val nodeName = pod.getSpec.getNodeName
+        logInfo(s"Executor pod $pod ready, launched at $nodeName")
+      }
+    }
+
+    override def onClose(cause: KubernetesClientException): Unit = {
+      logDebug("Executor pod readiness watch closed.", cause)
+    }
   }
 }
 
