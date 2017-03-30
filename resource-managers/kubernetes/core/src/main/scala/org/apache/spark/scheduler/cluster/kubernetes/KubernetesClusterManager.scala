@@ -23,8 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 private[spark] class KubernetesClusterManager extends ExternalClusterManager {
 
-  var clusterSchedulerBackend : Option[KubernetesClusterSchedulerBackend]
-
+  var clusterSchedulerBackend : Option[KubernetesClusterSchedulerBackend] = None
 
   override def canCreate(masterURL: String): Boolean = masterURL.startsWith("k8s")
 
@@ -58,8 +57,17 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
     extends TaskSetManager(taskScheduler, taskSet, maxTaskFailures) {
 
     override def getPendingTasksForHost(host: String): ArrayBuffer[Int] = {
-      var key = clusterSchedulerBackend.get.getClusterNodeForExecutor(host).getOrElse(host)
-      super.getPendingTasksForHost(key)
+      val pendingTasks = super.getPendingTasksForHost(host)
+      if (pendingTasks.nonEmpty) {
+        pendingTasks
+      } else {
+        val clusterNode = clusterSchedulerBackend.get.getClusterNodeForExecutor(host)
+        if (clusterNode.nonEmpty) {
+          super.getPendingTasksForHost(clusterNode.get)
+        } else {
+          pendingTasks
+        }
+      }
     }
   }
 }
