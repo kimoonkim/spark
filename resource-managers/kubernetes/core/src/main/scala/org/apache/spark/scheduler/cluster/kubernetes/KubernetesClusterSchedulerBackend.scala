@@ -43,6 +43,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
   private val EXECUTOR_MODIFICATION_LOCK = new Object
   private val runningExecutorPods = new scala.collection.mutable.HashMap[String, Pod]
+  private val runningExecutorHosts = new scala.collection.mutable.HashMap[String, Pod]
 
   private val executorDockerImage = conf.get(EXECUTOR_DOCKER_IMAGE)
   private val kubernetesNamespace = conf.get(KUBERNETES_NAMESPACE)
@@ -138,6 +139,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     // indication as to why.
     try {
       runningExecutorPods.values.foreach(kubernetesClient.pods().delete(_))
+      runningExecutorHosts.values.foreach(kubernetesClient.pods().delete(_))
     } catch {
       case e: Throwable => logError("Uncaught exception while shutting down controllers.", e)
     }
@@ -154,7 +156,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     super.stop()
   }
 
-  private def allocateNewExecutorPod(): (String, Pod) = {
+  private def allocateNewExecutorPod(): (String, String, Pod) = {
     val executorId = EXECUTOR_ID_COUNTER.incrementAndGet().toString
     val name = s"${applicationId()}-exec-$executorId"
 
@@ -195,7 +197,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
           .build()
       })
     try {
-      (executorId, kubernetesClient.pods().createNew()
+      (executorId, hostname, kubernetesClient.pods().createNew()
         .withNewMetadata()
           .withName(name)
           .withLabels(selectors)
@@ -239,9 +241,10 @@ private[spark] class KubernetesClusterSchedulerBackend(
           + s" additional executors, expecting total $requestedTotal and currently" +
           s" expected ${totalExpectedExecutors.get}")
         for (i <- 0 until (requestedTotal - totalExpectedExecutors.get)) {
-          val (executorId, pod) = allocateNewExecutorPod()
+          val (executorId, hostname, pod) = allocateNewExecutorPod()
           logInfo(s"Allocated $executorId $pod")
           runningExecutorPods += ((executorId, pod))
+          runningExecutorHosts += ((hostname, pod))
           val podReadyFuture = SettableFuture.create[Pod]
           val podWatcher = new ExecutorPodReadyWatcher(podReadyFuture)
           kubernetesClient
@@ -260,6 +263,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
       for (executor <- executorIds) {
         runningExecutorPods.remove(executor) match {
           case Some(pod) => kubernetesClient.pods().delete(pod)
+            runningExecutorHosts.remove(pod.getSpec.getHostname)
           case None => logWarning(s"Unable to remove pod for unknown executor $executor")
         }
       }
@@ -267,19 +271,32 @@ private[spark] class KubernetesClusterSchedulerBackend(
     true
   }
 
+  def getClusterNodeForExecutor(hostname: String): Option[String] = {
+    EXECUTOR_MODIFICATION_LOCK.synchronized {
+      val pod = runningExecutorHosts.get(hostname)
+      if (pod.nonEmpty) {
+        val clusterNodeName = pod.get.getSpec.getNodeName
+        Option(clusterNodeName)
+      } else {
+        None
+      }
+    }
+  }
+
   private class ExecutorPodReadyWatcher(resolvedExecutorPod: SettableFuture[Pod])
     extends Watcher[Pod] {
     override def eventReceived(action: Action, pod: Pod): Unit = {
-      if ((action == Action.ADDED || action == Action.MODIFIED)
-        && pod.getStatus.getPhase == "Running"
-        && !resolvedExecutorPod.isDone) {
+      if (action == Action.ADDED && pod.getStatus.getPhase == "Running"
+          && !resolvedExecutorPod.isDone) {
         pod.getStatus
           .getContainerStatuses
           .asScala
           .find(status => status.getReady)
           .foreach { _ => resolvedExecutorPod.set(pod) }
-        val nodeName = pod.getSpec.getNodeName
-        logInfo(s"Executor pod $pod ready, launched at $nodeName")
+        val podName = pod.getMetadata.getName
+        val hostName = pod.getSpec.getHostname
+        val clusterNodeName = pod.getSpec.getNodeName
+        logInfo(s"Executor pod $podName ready, launched at $clusterNodeName as $hostName")
       }
     }
 

@@ -17,26 +17,50 @@
 package org.apache.spark.scheduler.cluster.kubernetes
 
 import org.apache.spark.SparkContext
-import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend, TaskScheduler, TaskSchedulerImpl}
+import org.apache.spark.scheduler._
+
+import scala.collection.mutable.ArrayBuffer
 
 private[spark] class KubernetesClusterManager extends ExternalClusterManager {
+
+  var clusterSchedulerBackend : Option[KubernetesClusterSchedulerBackend]
+
 
   override def canCreate(masterURL: String): Boolean = masterURL.startsWith("k8s")
 
   override def createTaskScheduler(sc: SparkContext, masterURL: String): TaskScheduler = {
-    val scheduler = new TaskSchedulerImpl(sc)
+    val scheduler = new KubernetesTaskSchedulerImpl(sc)
     sc.taskScheduler = scheduler
     scheduler
   }
 
   override def createSchedulerBackend(sc: SparkContext, masterURL: String, scheduler: TaskScheduler)
       : SchedulerBackend = {
-    new KubernetesClusterSchedulerBackend(sc.taskScheduler.asInstanceOf[TaskSchedulerImpl], sc)
+    val schedulerBackend = new KubernetesClusterSchedulerBackend(
+      sc.taskScheduler.asInstanceOf[TaskSchedulerImpl], sc)
+    this.clusterSchedulerBackend = Some(schedulerBackend)
+    schedulerBackend
   }
 
   override def initialize(scheduler: TaskScheduler, backend: SchedulerBackend): Unit = {
     scheduler.asInstanceOf[TaskSchedulerImpl].initialize(backend)
   }
 
+  private[spark] class KubernetesTaskSchedulerImpl(sc: SparkContext) extends TaskSchedulerImpl(sc) {
+
+    override def createTaskSetManager(taskSet: TaskSet, maxTaskFailures: Int): TaskSetManager = {
+      new KubernetesTaskSetManager(this, taskSet, maxTaskFailures)
+    }
+  }
+
+  private[spark] class KubernetesTaskSetManager(
+       taskScheduler: KubernetesTaskSchedulerImpl, taskSet: TaskSet, maxTaskFailures: Int)
+    extends TaskSetManager(taskScheduler, taskSet, maxTaskFailures) {
+
+    override def getPendingTasksForHost(host: String): ArrayBuffer[Int] = {
+      var key = clusterSchedulerBackend.get.getClusterNodeForExecutor(host).getOrElse(host)
+      super.getPendingTasksForHost(key)
+    }
+  }
 }
 
