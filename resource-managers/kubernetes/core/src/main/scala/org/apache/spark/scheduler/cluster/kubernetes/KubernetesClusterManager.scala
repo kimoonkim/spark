@@ -16,6 +16,8 @@
  */
 package org.apache.spark.scheduler.cluster.kubernetes
 
+import java.util.concurrent.atomic.AtomicReference
+
 import org.apache.spark.SparkContext
 import org.apache.spark.scheduler._
 
@@ -23,12 +25,39 @@ import scala.collection.mutable.ArrayBuffer
 
 private[spark] class KubernetesClusterManager extends ExternalClusterManager {
 
-  var clusterSchedulerBackend : Option[KubernetesClusterSchedulerBackend] = None
+  var clusterSchedulerBackend : AtomicReference[KubernetesClusterSchedulerBackend] =
+    new AtomicReference()
 
   override def canCreate(masterURL: String): Boolean = masterURL.startsWith("k8s")
 
   override def createTaskScheduler(sc: SparkContext, masterURL: String): TaskScheduler = {
-    val scheduler = new KubernetesTaskSchedulerImpl(sc)
+    val scheduler = new TaskSchedulerImpl(sc) {
+
+      override def createTaskSetManager(taskSet: TaskSet, maxTaskFailures: Int): TaskSetManager = {
+        new TaskSetManager(sched = this, taskSet, maxTaskFailures) {
+
+          // Returns preferred tasks for an executor that may have local data there,
+          // using the physical cluster node name that it is running on.
+          override def getPendingTasksForHost(host: String): ArrayBuffer[Int] = {
+            val pendingTasks = super.getPendingTasksForHost(host)
+            if (pendingTasks.nonEmpty) {
+              return pendingTasks
+            }
+            val backend = clusterSchedulerBackend.get
+            if (backend == null) {
+              return pendingTasks
+            }
+            val clusterNode = backend.getClusterNodeForExecutor(host)
+            if (clusterNode.isEmpty) {
+              return pendingTasks
+            }
+            logInfo(s"Getting preferred task list for executor host $host " +
+              s"using cluster node name $clusterNode")
+            super.getPendingTasksForHost(clusterNode.get)
+          }
+        }
+      }
+    }
     sc.taskScheduler = scheduler
     scheduler
   }
@@ -37,38 +66,12 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
       : SchedulerBackend = {
     val schedulerBackend = new KubernetesClusterSchedulerBackend(
       sc.taskScheduler.asInstanceOf[TaskSchedulerImpl], sc)
-    this.clusterSchedulerBackend = Some(schedulerBackend)
+    this.clusterSchedulerBackend.set(schedulerBackend)
     schedulerBackend
   }
 
   override def initialize(scheduler: TaskScheduler, backend: SchedulerBackend): Unit = {
     scheduler.asInstanceOf[TaskSchedulerImpl].initialize(backend)
-  }
-
-  private[spark] class KubernetesTaskSchedulerImpl(sc: SparkContext) extends TaskSchedulerImpl(sc) {
-
-    override def createTaskSetManager(taskSet: TaskSet, maxTaskFailures: Int): TaskSetManager = {
-      new KubernetesTaskSetManager(this, taskSet, maxTaskFailures)
-    }
-  }
-
-  private[spark] class KubernetesTaskSetManager(
-       taskScheduler: KubernetesTaskSchedulerImpl, taskSet: TaskSet, maxTaskFailures: Int)
-    extends TaskSetManager(taskScheduler, taskSet, maxTaskFailures) {
-
-    override def getPendingTasksForHost(host: String): ArrayBuffer[Int] = {
-      val pendingTasks = super.getPendingTasksForHost(host)
-      if (pendingTasks.nonEmpty) {
-        pendingTasks
-      } else {
-        val clusterNode = clusterSchedulerBackend.get.getClusterNodeForExecutor(host)
-        if (clusterNode.nonEmpty) {
-          super.getPendingTasksForHost(clusterNode.get)
-        } else {
-          pendingTasks
-        }
-      }
-    }
   }
 }
 
