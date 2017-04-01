@@ -53,8 +53,10 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
               return emptyTasks
             }
             pendingTasks = super.getPendingTasksForHost(clusterNode.get)
-            logInfo(s"Got preferred task list $pendingTasks for executor host $host " +
-              s"using cluster node name $clusterNode")
+            if (pendingTasks.nonEmpty) {
+              logInfo(s"Got preferred task list $pendingTasks for executor host $host " +
+                s"using cluster node name $clusterNode")
+            }
             pendingTasks
           }
         }
