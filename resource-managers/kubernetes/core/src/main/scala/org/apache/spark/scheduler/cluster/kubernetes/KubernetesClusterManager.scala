@@ -39,21 +39,23 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
           // Returns preferred tasks for an executor that may have local data there,
           // using the physical cluster node name that it is running on.
           override def getPendingTasksForHost(host: String): ArrayBuffer[Int] = {
-            val pendingTasks = super.getPendingTasksForHost(host)
+            var pendingTasks = super.getPendingTasksForHost(host)
             if (pendingTasks.nonEmpty) {
               return pendingTasks
             }
+            val emptyTasks = pendingTasks
             val backend = clusterSchedulerBackend.get
             if (backend == null) {
-              return pendingTasks
+              return emptyTasks
             }
             val clusterNode = backend.getClusterNodeForExecutor(host)
             if (clusterNode.isEmpty) {
-              return pendingTasks
+              return emptyTasks
             }
-            logInfo(s"Getting preferred task list for executor host $host " +
+            pendingTasks = super.getPendingTasksForHost(clusterNode.get)
+            logInfo(s"Got preferred task list $pendingTasks for executor host $host " +
               s"using cluster node name $clusterNode")
-            super.getPendingTasksForHost(clusterNode.get)
+            pendingTasks
           }
         }
       }
