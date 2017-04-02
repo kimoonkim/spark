@@ -45,8 +45,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
   private val EXECUTOR_MODIFICATION_LOCK = new Object
   private val runningExecutorPods = new scala.collection.mutable.HashMap[String, Pod]
   private val executorWatchResources = new scala.collection.mutable.HashMap[String, Closeable]
-  private val executorWatchers =
-    new scala.collection.mutable.HashMap[String, ExecutorPodReadyWatcher]
+  private val executorPodIPsToNodeNames = new scala.collection.mutable.HashMap[String, String]
 
   private val executorDockerImage = conf.get(EXECUTOR_DOCKER_IMAGE)
   private val kubernetesNamespace = conf.get(KUBERNETES_NAMESPACE)
@@ -143,7 +142,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     try {
       runningExecutorPods.values.foreach(kubernetesClient.pods().delete(_))
       executorWatchResources.values.foreach(_.close)
-      executorWatchers.clear()
+      executorPodIPsToNodeNames.clear()
     } catch {
       case e: Throwable => logError("Uncaught exception while shutting down controllers.", e)
     }
@@ -161,7 +160,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     super.stop()
   }
 
-  private def allocateNewExecutorPod(): (String, String, Pod) = {
+  private def allocateNewExecutorPod(): (String, Pod) = {
     val executorId = EXECUTOR_ID_COUNTER.incrementAndGet().toString
     val name = s"${applicationId()}-exec-$executorId"
 
@@ -206,7 +205,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
           .build()
       })
     try {
-      (executorId, hostname, kubernetesClient.pods().createNew()
+      (executorId, kubernetesClient.pods().createNew()
         .withNewMetadata()
           .withName(name)
           .withLabels(selectors)
@@ -250,7 +249,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
           + s" additional executors, expecting total $requestedTotal and currently" +
           s" expected ${totalExpectedExecutors.get}")
         for (i <- 0 until (requestedTotal - totalExpectedExecutors.get)) {
-          val (executorId, hostname, pod) = allocateNewExecutorPod()
+          val (executorId, pod) = allocateNewExecutorPod()
           logInfo(s"Allocated executor $executorId")
           runningExecutorPods += ((executorId, pod))
           val podReadyFuture = SettableFuture.create[Pod]
@@ -259,8 +258,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
             .pods()
             .withName(pod.getMetadata.getName)
             .watch(podWatcher)
-          executorWatchResources += ((hostname, watchConnectionManager))
-          executorWatchers += ((hostname, podWatcher))
+          executorWatchResources += ((executorId, watchConnectionManager))
         }
       }
       totalExpectedExecutors.set(requestedTotal)
@@ -273,9 +271,8 @@ private[spark] class KubernetesClusterSchedulerBackend(
       for (executor <- executorIds) {
         runningExecutorPods.remove(executor) match {
           case Some(pod) => kubernetesClient.pods().delete(pod)
-            val host = pod.getSpec.getHostname
-            executorWatchResources.remove(host).foreach(_.close)
-            executorWatchers.remove(pod.getSpec.getHostname)
+            executorWatchResources.remove(executor).foreach(_.close)
+            executorPodIPsToNodeNames.remove(pod.getStatus.getPodIP)
           case None => logWarning(s"Unable to remove pod for unknown executor $executor")
         }
       }
@@ -283,21 +280,14 @@ private[spark] class KubernetesClusterSchedulerBackend(
     true
   }
 
-  def getClusterNodeForExecutor(hostname: String): Option[String] = {
+  def getClusterNodeForExecutor(podIP: String): Option[String] = {
     EXECUTOR_MODIFICATION_LOCK.synchronized {
-      val podWatcher = executorWatchers.get(hostname)
-      if (podWatcher.nonEmpty) {
-        Option(podWatcher.get.clusterNodeName.get)
-      } else {
-        None
-      }
+      executorPodIPsToNodeNames.get(podIP)
     }
   }
 
   private class ExecutorPodReadyWatcher(resolvedExecutorPod: SettableFuture[Pod])
     extends Watcher[Pod] {
-
-    var clusterNodeName : AtomicReference[String] = new AtomicReference[String]()
 
     override def eventReceived(action: Action, pod: Pod): Unit = {
       if (action == Action.MODIFIED && pod.getStatus.getPhase == "Running"
@@ -308,9 +298,12 @@ private[spark] class KubernetesClusterSchedulerBackend(
           .find(status => status.getReady)
           .foreach { _ => resolvedExecutorPod.set(pod) }
         val podName = pod.getMetadata.getName
-        val hostName = pod.getSpec.getHostname
-        clusterNodeName.set(pod.getSpec.getNodeName)
-        logInfo(s"Executor pod $podName ready, launched at $clusterNodeName as host $hostName.")
+        val podIP = pod.getStatus.getPodIP
+        val clusterNodeName = pod.getSpec.getNodeName
+        logInfo(s"Executor pod $podName ready, launched at $clusterNodeName as host $podIP.")
+        EXECUTOR_MODIFICATION_LOCK.synchronized {
+          executorPodIPsToNodeNames += ((podIP, clusterNodeName))
+        }
       }
     }
 
