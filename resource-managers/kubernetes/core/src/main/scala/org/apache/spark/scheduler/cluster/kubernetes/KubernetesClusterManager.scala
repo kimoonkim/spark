@@ -25,7 +25,8 @@ import scala.collection.mutable.ArrayBuffer
 
 private[spark] class KubernetesClusterManager extends ExternalClusterManager {
 
-  var clusterSchedulerBackend : AtomicReference[KubernetesClusterSchedulerBackend] =
+  private val EMPTY_TASKS = new ArrayBuffer[Int]()
+  private var clusterSchedulerBackend : AtomicReference[KubernetesClusterSchedulerBackend] =
     new AtomicReference()
 
   override def canCreate(masterURL: String): Boolean = masterURL.startsWith("k8s")
@@ -38,24 +39,28 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
 
           // Returns preferred tasks for an executor that may have local data there,
           // using the physical cluster node name that it is running on.
-          override def getPendingTasksForHost(host: String): ArrayBuffer[Int] = {
-            var pendingTasks = super.getPendingTasksForHost(host)
+          override def getPendingTasksForHost(executorIP: String): ArrayBuffer[Int] = {
+            var pendingTasks = super.getPendingTasksForHost(executorIP)
             if (pendingTasks.nonEmpty) {
               return pendingTasks
             }
-            val emptyTasks = pendingTasks
             val backend = clusterSchedulerBackend.get
             if (backend == null) {
-              return emptyTasks
+              return EMPTY_TASKS
             }
-            val clusterNode = backend.getClusterNodeForExecutor(host)
-            if (clusterNode.isEmpty) {
-              return emptyTasks
+            val pod = backend.getClusterNodeForExecutorIP(executorIP)
+            if (pod.isEmpty) {
+              return EMPTY_TASKS
             }
-            pendingTasks = super.getPendingTasksForHost(clusterNode.get)
+            val clusterNodeName = pod.get.getSpec.getNodeName
+            val clusterNodeIP = pod.get.getStatus.getHostIP
+            pendingTasks = super.getPendingTasksForHost(pod.get.getSpec.getNodeName)
+            if (pendingTasks.isEmpty) {
+              pendingTasks = super.getPendingTasksForHost(pod.get.getStatus.getHostIP)
+            }
             if (pendingTasks.nonEmpty) {
-              logInfo(s"Got preferred task list $pendingTasks for executor host $host " +
-                s"using cluster node name $clusterNode")
+              logInfo(s"Got preferred task list $pendingTasks for executor host $executorIP " +
+                s"using cluster node $clusterNodeName at $clusterNodeIP")
             }
             pendingTasks
           }

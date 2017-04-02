@@ -45,7 +45,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
   private val EXECUTOR_MODIFICATION_LOCK = new Object
   private val runningExecutorPods = new scala.collection.mutable.HashMap[String, Pod]
   private val executorWatchResources = new scala.collection.mutable.HashMap[String, Closeable]
-  private val executorPodIPsToNodeNames = new scala.collection.mutable.HashMap[String, String]
+  private val executorPodIPs = new scala.collection.mutable.HashMap[String, Pod]
 
   private val executorDockerImage = conf.get(EXECUTOR_DOCKER_IMAGE)
   private val kubernetesNamespace = conf.get(KUBERNETES_NAMESPACE)
@@ -142,7 +142,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     try {
       runningExecutorPods.values.foreach(kubernetesClient.pods().delete(_))
       executorWatchResources.values.foreach(_.close)
-      executorPodIPsToNodeNames.clear()
+      executorPodIPs.clear()
     } catch {
       case e: Throwable => logError("Uncaught exception while shutting down controllers.", e)
     }
@@ -272,7 +272,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
         runningExecutorPods.remove(executor) match {
           case Some(pod) => kubernetesClient.pods().delete(pod)
             executorWatchResources.remove(executor).foreach(_.close)
-            executorPodIPsToNodeNames.remove(pod.getStatus.getPodIP)
+            executorPodIPs.remove(pod.getStatus.getPodIP)
           case None => logWarning(s"Unable to remove pod for unknown executor $executor")
         }
       }
@@ -280,9 +280,9 @@ private[spark] class KubernetesClusterSchedulerBackend(
     true
   }
 
-  def getClusterNodeForExecutor(podIP: String): Option[String] = {
+  def getClusterNodeForExecutorIP(podIP: String): Option[Pod] = {
     EXECUTOR_MODIFICATION_LOCK.synchronized {
-      executorPodIPsToNodeNames.get(podIP)
+      executorPodIPs.get(podIP)
     }
   }
 
@@ -300,9 +300,9 @@ private[spark] class KubernetesClusterSchedulerBackend(
         val podName = pod.getMetadata.getName
         val podIP = pod.getStatus.getPodIP
         val clusterNodeName = pod.getSpec.getNodeName
-        logInfo(s"Executor pod $podName ready, launched at $clusterNodeName as host $podIP.")
+        logInfo(s"Executor pod $podName ready, launched at $clusterNodeName as IP $podIP.")
         EXECUTOR_MODIFICATION_LOCK.synchronized {
-          executorPodIPsToNodeNames += ((podIP, clusterNodeName))
+          executorPodIPs += ((podIP, pod))
         }
       }
     }
