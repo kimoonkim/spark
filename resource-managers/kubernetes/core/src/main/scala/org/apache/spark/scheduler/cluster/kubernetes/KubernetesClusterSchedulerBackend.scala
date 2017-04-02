@@ -20,7 +20,7 @@ import java.io.Closeable
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 
 import com.google.common.util.concurrent.SettableFuture
-import io.fabric8.kubernetes.api.model.{ContainerPortBuilder, EnvVarBuilder, Pod, QuantityBuilder}
+import io.fabric8.kubernetes.api.model._
 import io.fabric8.kubernetes.client.{KubernetesClientException, Watch, Watcher}
 import io.fabric8.kubernetes.client.Watcher.Action
 
@@ -181,7 +181,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     val executorCpuQuantity = new QuantityBuilder(false)
       .withAmount(executorCores)
       .build()
-    val requiredEnv = Seq(
+    var requiredEnv = Seq(
       (ENV_EXECUTOR_PORT, executorPort.toString),
       (ENV_DRIVER_URL, driverUrl),
       (ENV_EXECUTOR_CORES, executorCores),
@@ -191,6 +191,10 @@ private[spark] class KubernetesClusterSchedulerBackend(
     ).map(env => new EnvVarBuilder()
       .withName(env._1)
       .withValue(env._2)
+      .build())
+    requiredEnv = requiredEnv ++ Seq(new EnvVarBuilder()
+      .withName(ENV_EXECUTOR_POD_IP)
+      .withValueFrom(new EnvVarSourceBuilder().withNewFieldRef("v1", "status.podIP").build())
       .build())
     val requiredPorts = Seq(
       (EXECUTOR_PORT_NAME, executorPort),
