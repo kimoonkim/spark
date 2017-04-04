@@ -16,27 +16,71 @@
  */
 package org.apache.spark.scheduler.cluster.kubernetes
 
+import java.util.concurrent.atomic.AtomicReference
+
 import org.apache.spark.SparkContext
-import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend, TaskScheduler, TaskSchedulerImpl}
+import org.apache.spark.scheduler._
+
+import scala.collection.mutable.ArrayBuffer
 
 private[spark] class KubernetesClusterManager extends ExternalClusterManager {
+
+  private val EMPTY_TASKS = new ArrayBuffer[Int]()
+  private var clusterSchedulerBackend : AtomicReference[KubernetesClusterSchedulerBackend] =
+    new AtomicReference()
 
   override def canCreate(masterURL: String): Boolean = masterURL.startsWith("k8s")
 
   override def createTaskScheduler(sc: SparkContext, masterURL: String): TaskScheduler = {
-    val scheduler = new TaskSchedulerImpl(sc)
+    val scheduler = new TaskSchedulerImpl(sc) {
+
+      override def createTaskSetManager(taskSet: TaskSet, maxTaskFailures: Int): TaskSetManager = {
+        new TaskSetManager(sched = this, taskSet, maxTaskFailures) {
+
+          // Returns preferred tasks for an executor that may have local data there,
+          // using the physical cluster node name that it is running on.
+          override def getPendingTasksForHost(executorIP: String): ArrayBuffer[Int] = {
+            var pendingTasks = super.getPendingTasksForHost(executorIP)
+            if (pendingTasks.nonEmpty) {
+              return pendingTasks
+            }
+            val backend = clusterSchedulerBackend.get
+            if (backend == null) {
+              return EMPTY_TASKS
+            }
+            val pod = backend.getClusterNodeForExecutorIP(executorIP)
+            if (pod.isEmpty) {
+              return EMPTY_TASKS
+            }
+            val clusterNodeName = pod.get.getSpec.getNodeName
+            val clusterNodeIP = pod.get.getStatus.getHostIP
+            pendingTasks = super.getPendingTasksForHost(pod.get.getSpec.getNodeName)
+            if (pendingTasks.isEmpty) {
+              pendingTasks = super.getPendingTasksForHost(pod.get.getStatus.getHostIP)
+            }
+            if (pendingTasks.nonEmpty) {
+              logInfo(s"Got preferred task list $pendingTasks for executor host $executorIP " +
+                s"using cluster node $clusterNodeName at $clusterNodeIP")
+            }
+            pendingTasks
+          }
+        }
+      }
+    }
     sc.taskScheduler = scheduler
     scheduler
   }
 
   override def createSchedulerBackend(sc: SparkContext, masterURL: String, scheduler: TaskScheduler)
       : SchedulerBackend = {
-    new KubernetesClusterSchedulerBackend(sc.taskScheduler.asInstanceOf[TaskSchedulerImpl], sc)
+    val schedulerBackend = new KubernetesClusterSchedulerBackend(
+      sc.taskScheduler.asInstanceOf[TaskSchedulerImpl], sc)
+    this.clusterSchedulerBackend.set(schedulerBackend)
+    schedulerBackend
   }
 
   override def initialize(scheduler: TaskScheduler, backend: SchedulerBackend): Unit = {
     scheduler.asInstanceOf[TaskSchedulerImpl].initialize(backend)
   }
-
 }
 
