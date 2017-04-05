@@ -21,11 +21,11 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 
 import com.google.common.util.concurrent.SettableFuture
 import io.fabric8.kubernetes.api.model.{ContainerPortBuilder, EnvVarBuilder, Pod, QuantityBuilder}
-import io.fabric8.kubernetes.client.{KubernetesClientException, Watch, Watcher}
+import io.fabric8.kubernetes.client.{KubernetesClientException, Watcher}
 import io.fabric8.kubernetes.client.Watcher.Action
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.HashMap
+import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 import org.apache.spark.{SparkContext, SparkException}
 import org.apache.spark.deploy.kubernetes.KubernetesClientBuilder
@@ -36,6 +36,7 @@ import org.apache.spark.scheduler.TaskSchedulerImpl
 import org.apache.spark.scheduler.cluster.CoarseGrainedSchedulerBackend
 import org.apache.spark.util.{ThreadUtils, Utils}
 
+
 private[spark] class KubernetesClusterSchedulerBackend(
     scheduler: TaskSchedulerImpl,
     val sc: SparkContext)
@@ -44,9 +45,8 @@ private[spark] class KubernetesClusterSchedulerBackend(
   import KubernetesClusterSchedulerBackend._
 
   private val EXECUTOR_MODIFICATION_LOCK = new Object
-  private val runningExecutorPods = new HashMap[String, Pod]           // Indexed by IDs.
-  private val executorWatchResources = new HashMap[String, Closeable]  // Indexed by IDs.
-  private val executorPodsByIPs = new HashMap[String, Pod]             // Indexed by IP addrs.
+  private val runningExecutorPods = new mutable.HashMap[String, Pod] // Indexed by executor IDs.
+  private val executorPodsByIPs = new mutable.HashMap[String, Pod] // Indexed by executor IP addrs.
 
   private val executorDockerImage = conf.get(EXECUTOR_DOCKER_IMAGE)
   private val kubernetesNamespace = conf.get(KUBERNETES_NAMESPACE)
@@ -99,6 +99,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
       super.minRegisteredRatio
     }
 
+  private val executorWatchResource = new AtomicReference[Closeable]
   protected var totalExpectedExecutors = new AtomicInteger(0)
 
   private val driverUrl = RpcEndpointAddress(
@@ -131,6 +132,8 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
   override def start(): Unit = {
     super.start()
+    executorWatchResource.set(kubernetesClient.pods().withLabel(SPARK_APP_ID_LABEL, applicationId())
+      .watch(new ExecutorPodsReadyWatcher()))
     if (!Utils.isDynamicAllocationEnabled(sc.conf)) {
       doRequestTotalExecutors(initialExecutors)
     }
@@ -141,9 +144,14 @@ private[spark] class KubernetesClusterSchedulerBackend(
     // When using Utils.tryLogNonFatalError some of the code fails but without any logs or
     // indication as to why.
     try {
-      runningExecutorPods.values.foreach(kubernetesClient.pods().delete(_))
-      executorWatchResources.values.foreach(_.close)
-      executorPodsByIPs.clear()
+      EXECUTOR_MODIFICATION_LOCK.synchronized {
+        runningExecutorPods.values.foreach(kubernetesClient.pods().delete(_))
+        executorPodsByIPs.clear()
+      }
+      val resource = executorWatchResource.getAndSet(null)
+      if (resource != null) {
+        resource.close()
+      }
     } catch {
       case e: Throwable => logError("Uncaught exception while shutting down controllers.", e)
     }
@@ -249,13 +257,6 @@ private[spark] class KubernetesClusterSchedulerBackend(
           val (executorId, pod) = allocateNewExecutorPod()
           logInfo(s"Allocated executor $executorId")
           runningExecutorPods += ((executorId, pod))
-          val podReadyFuture = SettableFuture.create[Pod]
-          val podWatcher = new ExecutorPodReadyWatcher(podReadyFuture)
-          val watchConnectionManager = kubernetesClient
-            .pods()
-            .withName(pod.getMetadata.getName)
-            .watch(podWatcher)
-          executorWatchResources += ((executorId, watchConnectionManager))
         }
       }
       totalExpectedExecutors.set(requestedTotal)
@@ -267,8 +268,8 @@ private[spark] class KubernetesClusterSchedulerBackend(
     EXECUTOR_MODIFICATION_LOCK.synchronized {
       for (executor <- executorIds) {
         runningExecutorPods.remove(executor) match {
-          case Some(pod) => kubernetesClient.pods().delete(pod)
-            executorWatchResources.remove(executor).foreach(_.close)
+          case Some(pod) =>
+            kubernetesClient.pods().delete(pod)
             executorPodsByIPs.remove(pod.getStatus.getPodIP)
           case None => logWarning(s"Unable to remove pod for unknown executor $executor")
         }
@@ -283,17 +284,10 @@ private[spark] class KubernetesClusterSchedulerBackend(
     }
   }
 
-  private class ExecutorPodReadyWatcher(resolvedExecutorPod: SettableFuture[Pod])
-    extends Watcher[Pod] {
+  private class ExecutorPodsReadyWatcher extends Watcher[Pod] {
 
     override def eventReceived(action: Action, pod: Pod): Unit = {
-      if (action == Action.MODIFIED && pod.getStatus.getPhase == "Running"
-          && !resolvedExecutorPod.isDone) {
-        pod.getStatus
-          .getContainerStatuses
-          .asScala
-          .find(status => status.getReady)
-          .foreach { _ => resolvedExecutorPod.set(pod) }
+      if (action == Action.MODIFIED && pod.getStatus.getPhase == "Running") {
         val podName = pod.getMetadata.getName
         val podIP = pod.getStatus.getPodIP
         val clusterNodeName = pod.getSpec.getNodeName

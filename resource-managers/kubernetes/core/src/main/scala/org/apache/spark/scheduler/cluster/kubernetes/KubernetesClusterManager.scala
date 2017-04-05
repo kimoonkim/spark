@@ -32,8 +32,13 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
       override def createTaskSetManager(taskSet: TaskSet, maxTaskFailures: Int): TaskSetManager = {
         new TaskSetManager(sched = this, taskSet, maxTaskFailures) {
 
-          // Returns preferred tasks for an executor that may have local data there,
-          // using the physical cluster node name that it is running on.
+          /**
+           * Overrides the lookup to use not only the executor pod IP, but also the cluster node
+           * name and host IP address that the pod is running on. The base class may have populated
+           * the lookup target map with HDFS datanode locations if this task set reads HDFS data.
+           * Those datanode locations are based on cluster node names or host IP addresses. Using
+           * only executor pod IPs may not match them.
+           */
           override def getPendingTasksForHost(executorIP: String): ArrayBuffer[Int] = {
             var pendingTasks = super.getPendingTasksForHost(executorIP)
             if (pendingTasks.nonEmpty) {
@@ -47,12 +52,12 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
             }
             val clusterNodeName = pod.get.getSpec.getNodeName
             val clusterNodeIP = pod.get.getStatus.getHostIP
-            pendingTasks = super.getPendingTasksForHost(pod.get.getSpec.getNodeName)
+            pendingTasks = super.getPendingTasksForHost(clusterNodeName)
             if (pendingTasks.isEmpty) {
-              pendingTasks = super.getPendingTasksForHost(pod.get.getStatus.getHostIP)
+              pendingTasks = super.getPendingTasksForHost(clusterNodeIP)
             }
-            if (pendingTasks.nonEmpty) {
-              logInfo(s"Got preferred task list $pendingTasks for executor host $executorIP " +
+            if (pendingTasks.nonEmpty && log.isDebugEnabled) {
+              logDebug(s"Got preferred task list $pendingTasks for executor host $executorIP " +
                 s"using cluster node $clusterNodeName at $clusterNodeIP")
             }
             pendingTasks
