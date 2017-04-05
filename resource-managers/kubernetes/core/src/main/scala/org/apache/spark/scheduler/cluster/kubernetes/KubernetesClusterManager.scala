@@ -16,19 +16,13 @@
  */
 package org.apache.spark.scheduler.cluster.kubernetes
 
-import java.util.concurrent.atomic.AtomicReference
+import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.SparkContext
 import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend,
     TaskScheduler, TaskSchedulerImpl, TaskSet, TaskSetManager}
 
-import scala.collection.mutable.ArrayBuffer
-
 private[spark] class KubernetesClusterManager extends ExternalClusterManager {
-
-  private val EMPTY_TASKS = new ArrayBuffer[Int]()
-  private var clusterSchedulerBackend : AtomicReference[KubernetesClusterSchedulerBackend] =
-    new AtomicReference()
 
   override def canCreate(masterURL: String): Boolean = masterURL.startsWith("k8s")
 
@@ -45,13 +39,11 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
             if (pendingTasks.nonEmpty) {
               return pendingTasks
             }
-            val backend = clusterSchedulerBackend.get
-            if (backend == null) {
-              return EMPTY_TASKS
-            }
+            val backend = sc.taskScheduler.asInstanceOf[TaskSchedulerImpl].backend.asInstanceOf[
+              KubernetesClusterSchedulerBackend]
             val pod = backend.getClusterNodeForExecutorIP(executorIP)
             if (pod.isEmpty) {
-              return EMPTY_TASKS
+              return pendingTasks  // Empty
             }
             val clusterNodeName = pod.get.getSpec.getNodeName
             val clusterNodeIP = pod.get.getStatus.getHostIP
@@ -74,10 +66,7 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
 
   override def createSchedulerBackend(sc: SparkContext, masterURL: String, scheduler: TaskScheduler)
       : SchedulerBackend = {
-    val schedulerBackend = new KubernetesClusterSchedulerBackend(
-      sc.taskScheduler.asInstanceOf[TaskSchedulerImpl], sc)
-    this.clusterSchedulerBackend.set(schedulerBackend)
-    schedulerBackend
+    new KubernetesClusterSchedulerBackend(sc.taskScheduler.asInstanceOf[TaskSchedulerImpl], sc)
   }
 
   override def initialize(scheduler: TaskScheduler, backend: SchedulerBackend): Unit = {
