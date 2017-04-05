@@ -41,7 +41,7 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager {
             }
             val backend = sc.taskScheduler.asInstanceOf[TaskSchedulerImpl].backend.asInstanceOf[
               KubernetesClusterSchedulerBackend]
-            val pod = backend.getClusterNodeForExecutorIP(executorIP)
+            val pod = backend.getExecutorPodByIP(executorIP)
             if (pod.isEmpty) {
               return pendingTasks  // Empty
             }
