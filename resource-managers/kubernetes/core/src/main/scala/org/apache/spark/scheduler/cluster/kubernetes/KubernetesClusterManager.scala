@@ -19,7 +19,8 @@ package org.apache.spark.scheduler.cluster.kubernetes
 import java.util.concurrent.atomic.AtomicReference
 
 import org.apache.spark.SparkContext
-import org.apache.spark.scheduler._
+import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend,
+    TaskScheduler, TaskSchedulerImpl, TaskSet, TaskSetManager}
 
 import scala.collection.mutable.ArrayBuffer
 
