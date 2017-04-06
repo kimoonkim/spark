@@ -19,14 +19,15 @@ package org.apache.spark.scheduler.cluster.kubernetes
 import java.io.Closeable
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 
+import scala.collection.JavaConverters._
+import scala.collection.mutable
+import scala.concurrent.{ExecutionContext, Future}
+
 import io.fabric8.kubernetes.api.model.{ContainerPortBuilder, EnvVarBuilder,
     EnvVarSourceBuilder, Pod, QuantityBuilder}
 import io.fabric8.kubernetes.client.{KubernetesClientException, Watcher}
 import io.fabric8.kubernetes.client.Watcher.Action
 
-import scala.collection.JavaConverters._
-import scala.collection.mutable
-import scala.concurrent.{ExecutionContext, Future}
 import org.apache.spark.{SparkContext, SparkException}
 import org.apache.spark.deploy.kubernetes.KubernetesClientBuilder
 import org.apache.spark.deploy.kubernetes.config._
@@ -35,7 +36,6 @@ import org.apache.spark.rpc.RpcEndpointAddress
 import org.apache.spark.scheduler.TaskSchedulerImpl
 import org.apache.spark.scheduler.cluster.CoarseGrainedSchedulerBackend
 import org.apache.spark.util.{ThreadUtils, Utils}
-
 
 private[spark] class KubernetesClusterSchedulerBackend(
     scheduler: TaskSchedulerImpl,
