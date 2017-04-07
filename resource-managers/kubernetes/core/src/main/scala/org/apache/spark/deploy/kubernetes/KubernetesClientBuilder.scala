@@ -21,9 +21,10 @@ import java.util.concurrent.{ThreadFactory, ThreadPoolExecutor}
 
 import com.google.common.base.Charsets
 import com.google.common.io.Files
-import io.fabric8.kubernetes.client.utils.HttpClientUtils
 import io.fabric8.kubernetes.client.{Config, ConfigBuilder, DefaultKubernetesClient}
+import io.fabric8.kubernetes.client.utils.HttpClientUtils
 import okhttp3.Dispatcher
+
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
