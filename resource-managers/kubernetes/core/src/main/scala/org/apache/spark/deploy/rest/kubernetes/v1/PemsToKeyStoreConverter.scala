@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.spark.deploy.rest.kubernetes
+package org.apache.spark.deploy.rest.kubernetes.v1
 
 import java.io.{File, FileInputStream, FileOutputStream, InputStreamReader}
 import java.nio.file.Paths
@@ -60,11 +60,12 @@ private[spark] object PemsToKeyStoreConverter {
       privateKey,
       keyPassword.map(_.toCharArray).orNull,
       certificates)
-    val keyStoreOutputPath = Paths.get(s"keystore-${UUID.randomUUID()}.$resolvedKeyStoreType")
-    Utils.tryWithResource(new FileOutputStream(keyStoreOutputPath.toFile)) { storeStream =>
+    val keyStoreDir = Utils.createTempDir("temp-keystores")
+    val keyStoreFile = new File(keyStoreDir, s"keystore-${UUID.randomUUID()}.$resolvedKeyStoreType")
+    Utils.tryWithResource(new FileOutputStream(keyStoreFile)) { storeStream =>
       keyStore.store(storeStream, keyStorePassword.map(_.toCharArray).orNull)
     }
-    keyStoreOutputPath.toFile
+    keyStoreFile
   }
 
   def convertCertPemToTrustStore(
