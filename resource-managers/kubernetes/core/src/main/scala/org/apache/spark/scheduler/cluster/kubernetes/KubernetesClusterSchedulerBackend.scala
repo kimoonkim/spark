@@ -151,6 +151,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     try {
       RUNNING_EXECUTOR_PODS_LOCK.synchronized {
         runningExecutorPods.values.foreach(kubernetesClient.pods().delete(_))
+        runningExecutorPods.clear()
       }
       EXECUTOR_PODS_BY_IPS_LOCK.synchronized {
         executorPodsByIPs.clear()
@@ -299,7 +300,6 @@ private[spark] class KubernetesClusterSchedulerBackend(
     override def eventReceived(action: Action, pod: Pod): Unit = {
       if (action == Action.MODIFIED && pod.getStatus.getPhase == "Running"
           && pod.getMetadata.getDeletionTimestamp == null) {
-        val podName = pod.getMetadata.getName
         val podIP = pod.getStatus.getPodIP
         val clusterNodeName = pod.getSpec.getNodeName
         logDebug(s"Executor pod $pod ready, launched at $clusterNodeName as IP $podIP.")
