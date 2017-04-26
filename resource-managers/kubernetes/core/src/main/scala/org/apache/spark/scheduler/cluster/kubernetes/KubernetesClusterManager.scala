@@ -17,8 +17,7 @@
 package org.apache.spark.scheduler.cluster.kubernetes
 
 import org.apache.spark.SparkContext
-import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend, TaskScheduler,
-    TaskSchedulerImpl}
+import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend, TaskScheduler, TaskSchedulerImpl}
 
 private[spark] class KubernetesClusterManager extends ExternalClusterManager {
 
