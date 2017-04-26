@@ -306,12 +306,15 @@ private[spark] class KubernetesClusterSchedulerBackend(
         EXECUTOR_PODS_BY_IPS_LOCK.synchronized {
           executorPodsByIPs += ((podIP, pod))
         }
-      } else if (action == Action.MODIFIED && pod.getMetadata.getDeletionTimestamp != null) {
+      } else if ((action == Action.MODIFIED && pod.getMetadata.getDeletionTimestamp != null) ||
+          action == Action.DELETED || action == Action.ERROR) {
         val podName = pod.getMetadata.getName
         val podIP = pod.getStatus.getPodIP
-        logDebug(s"Executor pod $podName at IP $podIP was deleted.")
-        EXECUTOR_PODS_BY_IPS_LOCK.synchronized {
-          executorPodsByIPs -= podIP
+        logDebug(s"Executor pod $podName at IP $podIP was at $action.")
+        if (podIP != null) {
+          EXECUTOR_PODS_BY_IPS_LOCK.synchronized {
+            executorPodsByIPs -= podIP
+          }
         }
       }
     }
