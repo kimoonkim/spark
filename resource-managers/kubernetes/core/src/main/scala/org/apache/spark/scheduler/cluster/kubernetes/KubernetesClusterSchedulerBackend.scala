@@ -159,11 +159,6 @@ private[spark] class KubernetesClusterSchedulerBackend(
       case e: Throwable => logError("Uncaught exception while shutting down controllers.", e)
     }
     try {
-      kubernetesClient.services().withName(kubernetesDriverServiceName).delete()
-    } catch {
-      case e: Throwable => logError("Uncaught exception while shutting down driver service.", e)
-    }
-    try {
       logInfo("Closing kubernetes client")
       kubernetesClient.close()
     } catch {
