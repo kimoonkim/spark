@@ -16,12 +16,97 @@
  */
 package org.apache.spark.scheduler.cluster.kubernetes
 
-import org.apache.spark.SparkContext
-import org.apache.spark.scheduler.{TaskSchedulerImpl, TaskSet, TaskSetManager}
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.CommonConfigurationKeysPublic
+import org.apache.hadoop.net.{NetworkTopology, ScriptBasedMapping, TableMapping}
+import org.apache.hadoop.yarn.util.RackResolver
+import org.apache.log4j.{Level, Logger}
 
-private[spark] class KubernetesTaskSchedulerImpl(sc: SparkContext) extends TaskSchedulerImpl(sc) {
+import org.apache.spark.scheduler.{TaskSchedulerImpl, TaskSet, TaskSetManager}
+import org.apache.spark.util.Utils
+import org.apache.spark.SparkContext
+
+private[spark] class KubernetesTaskSchedulerImpl(
+    sc: SparkContext,
+    rackResolverUtil: RackResolverUtil = new RackResolverUtil,
+    inetAddressUtil: InetAddressUtil = new InetAddressUtil) extends TaskSchedulerImpl(sc) {
+
+  rackResolverUtil.init(sc.hadoopConfiguration)
 
   override def createTaskSetManager(taskSet: TaskSet, maxTaskFailures: Int): TaskSetManager = {
     new KubernetesTaskSetManager(this, taskSet, maxTaskFailures)
+  }
+
+  override def getRackForHost(hostPort: String): Option[String] = {
+    if (!rackResolverUtil.isConfigured) {
+      // Only calls resolver when it is configured to avoid sending DNS queries for cluster nodes.
+      // See InetAddressUtil for details.
+      None
+    } else {
+      getRackForDatanodeOrExecutor(hostPort)
+    }
+  }
+
+  private def getRackForDatanodeOrExecutor(hostPort: String): Option[String] = {
+    val host = Utils.parseHostPort(hostPort)._1
+    val backend = this.backend.asInstanceOf[KubernetesClusterSchedulerBackend]
+    val executorPod = backend.getExecutorPodByIP(host)
+    if (executorPod.isEmpty) {
+      // Find the rack of the datanode host.
+      rackResolverUtil.resolveRack(sc.hadoopConfiguration, host)
+    } else {
+      // Find the rack of the cluster node that the executor pod is running on.
+      val clusterNodeName = executorPod.get.getSpec.getNodeName
+      val rackByNodeName = rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeName)
+      if (rackByNodeName.nonEmpty) {
+        rackByNodeName
+      } else {
+        val clusterNodeIP = executorPod.get.getStatus.getHostIP
+        val rackByNodeIP = rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeIP)
+        if (rackByNodeName.nonEmpty) {
+          rackByNodeIP
+        } else {
+          val clusterNodeFullName = inetAddressUtil.getFullHostName(clusterNodeIP)
+          rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeFullName)
+        }
+      }
+    }
+  }
+}
+
+private[kubernetes] class RackResolverUtil {
+
+  val scriptPlugin = classOf[ScriptBasedMapping].getCanonicalName
+  val tablePlugin = classOf[TableMapping].getCanonicalName
+
+  var isConfigured = false
+
+  def init(hadoopConfiguration: Configuration) : Unit = {
+    isConfigured = checkConfigured(hadoopConfiguration)
+    // RackResolver logs an INFO message whenever it resolves a rack, which is way too often.
+    if (Logger.getLogger(classOf[RackResolver]).getLevel == null) {
+      Logger.getLogger(classOf[RackResolver]).setLevel(Level.WARN)
+    }
+  }
+
+  def checkConfigured(hadoopConfiguration: Configuration): Boolean = {
+    val plugin = hadoopConfiguration.get(
+      CommonConfigurationKeysPublic.NET_TOPOLOGY_NODE_SWITCH_MAPPING_IMPL_KEY, scriptPlugin)
+    val scriptName = hadoopConfiguration.get(
+      CommonConfigurationKeysPublic.NET_TOPOLOGY_SCRIPT_FILE_NAME_KEY, "")
+    val tableName = hadoopConfiguration.get(
+      CommonConfigurationKeysPublic.NET_TOPOLOGY_TABLE_MAPPING_FILE_KEY, "")
+    plugin == scriptPlugin && scriptName.nonEmpty ||
+      plugin == tablePlugin && tableName.nonEmpty ||
+      plugin != scriptPlugin && plugin != tablePlugin
+  }
+
+  def resolveRack(hadoopConfiguration: Configuration, host: String): Option[String] = {
+    val rack = Option(RackResolver.resolve(hadoopConfiguration, host).getNetworkLocation)
+    if (rack.nonEmpty && rack.get != NetworkTopology.DEFAULT_RACK) {
+      rack
+    } else {
+      None
+    }
   }
 }
