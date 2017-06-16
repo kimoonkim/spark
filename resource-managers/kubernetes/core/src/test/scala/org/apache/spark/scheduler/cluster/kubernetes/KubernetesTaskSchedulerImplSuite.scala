@@ -19,16 +19,16 @@ package org.apache.spark.scheduler.cluster.kubernetes
 import io.fabric8.kubernetes.api.model.{Pod, PodSpec, PodStatus}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic
-import org.apache.hadoop.net.NetworkTopology
 import org.mockito.Matchers._
 import org.mockito.Mockito._
 
-import org.apache.spark.{SparkContext, SparkFunSuite}
+import org.apache.spark.{SparkConf, SparkContext, SparkFunSuite}
 import org.apache.spark.scheduler.FakeTask
 
 class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
 
-  val sc = new SparkContext("local", "test")
+  val sc = new SparkContext(master = "local", appName = "test",
+    new SparkConf().set("spark.driver.allowMultipleContexts", "true"))
   val backend = mock(classOf[KubernetesClusterSchedulerBackend])
 
   test("Create a k8s task set manager") {
@@ -42,7 +42,7 @@ class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
 
   test("Gets racks for datanodes") {
     val rackResolverUtil = mock(classOf[RackResolverUtil])
-    when(rackResolverUtil.checkConfigured(sc.hadoopConfiguration)).thenReturn(true)
+    when(rackResolverUtil.isConfigured).thenReturn(true)
     when(rackResolverUtil.resolveRack(sc.hadoopConfiguration, "kube-node1"))
       .thenReturn(Option("/rack1"))
     when(rackResolverUtil.resolveRack(sc.hadoopConfiguration, "kube-node2"))
@@ -58,15 +58,15 @@ class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
 
   test("Gets racks for executor pods") {
     val rackResolverUtil = mock(classOf[RackResolverUtil])
-    when(rackResolverUtil.checkConfigured(sc.hadoopConfiguration)).thenReturn(true)
+    when(rackResolverUtil.isConfigured).thenReturn(true)
     when(rackResolverUtil.resolveRack(sc.hadoopConfiguration, "kube-node1"))
       .thenReturn(Option("/rack1"))
     when(rackResolverUtil.resolveRack(sc.hadoopConfiguration, "kube-node2.mydomain.com"))
       .thenReturn(Option("/rack2"))
     when(rackResolverUtil.resolveRack(sc.hadoopConfiguration, "kube-node2"))
-      .thenReturn(Option(NetworkTopology.DEFAULT_RACK))
+      .thenReturn(None)
     when(rackResolverUtil.resolveRack(sc.hadoopConfiguration, "192.168.1.5"))
-      .thenReturn(Option(NetworkTopology.DEFAULT_RACK))
+      .thenReturn(None)
     val inetAddressUtil = mock(classOf[InetAddressUtil])
     val sched = new KubernetesTaskSchedulerImpl(sc, rackResolverUtil, inetAddressUtil)
     sched.backend = backend
