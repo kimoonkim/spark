@@ -21,13 +21,13 @@ import scala.collection.mutable.ArrayBuffer
 import io.fabric8.kubernetes.api.model.{Pod, PodSpec, PodStatus}
 import org.mockito.Mockito._
 
-import org.apache.spark.{SparkConf, SparkContext, SparkFunSuite}
+import org.apache.spark.{SparkContext, SparkFunSuite}
 import org.apache.spark.scheduler.{FakeTask, FakeTaskScheduler, HostTaskLocation, TaskLocation}
 
 class KubernetesTaskSetManagerSuite extends SparkFunSuite {
 
-  val sc = new SparkContext(master = "local", appName = "test",
-    new SparkConf().set("spark.driver.allowMultipleContexts", "true"))
+  SparkContext.clearActiveContext()
+  val sc = new SparkContext("local", "test")
   val sched = new FakeTaskScheduler(sc,
     ("execA", "10.0.0.1"), ("execB", "10.0.0.2"), ("execC", "10.0.0.3"))
   val backend = mock(classOf[KubernetesClusterSchedulerBackend])

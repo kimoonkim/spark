@@ -22,18 +22,18 @@ import org.apache.hadoop.fs.CommonConfigurationKeysPublic
 import org.mockito.Matchers._
 import org.mockito.Mockito._
 
-import org.apache.spark.{SparkConf, SparkContext, SparkFunSuite}
+import org.apache.spark.{SparkContext, SparkFunSuite}
 import org.apache.spark.scheduler.FakeTask
 
 class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
 
-  val sc = new SparkContext(master = "local", appName = "test",
-    new SparkConf().set("spark.driver.allowMultipleContexts", "true"))
+  SparkContext.clearActiveContext()
+  val sc = new SparkContext("local", "test")
   val backend = mock(classOf[KubernetesClusterSchedulerBackend])
 
   test("Create a k8s task set manager") {
     val sched = new KubernetesTaskSchedulerImpl(sc)
-    sched.backend = backend
+    sched.kubernetesSchedulerBackend = backend
     val taskSet = FakeTask.createTaskSet(0)
 
     val manager = sched.createTaskSetManager(taskSet, maxTaskFailures = 3)
@@ -48,7 +48,7 @@ class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
     when(rackResolverUtil.resolveRack(sc.hadoopConfiguration, "kube-node2"))
       .thenReturn(Option("/rack2"))
     val sched = new KubernetesTaskSchedulerImpl(sc, rackResolverUtil)
-    sched.backend = backend
+    sched.kubernetesSchedulerBackend = backend
     when(backend.getExecutorPodByIP("kube-node1")).thenReturn(None)
     when(backend.getExecutorPodByIP("kube-node2")).thenReturn(None)
 
@@ -69,7 +69,7 @@ class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
       .thenReturn(None)
     val inetAddressUtil = mock(classOf[InetAddressUtil])
     val sched = new KubernetesTaskSchedulerImpl(sc, rackResolverUtil, inetAddressUtil)
-    sched.backend = backend
+    sched.kubernetesSchedulerBackend = backend
 
     val spec1 = mock(classOf[PodSpec])
     when(spec1.getNodeName).thenReturn("kube-node1")
@@ -100,7 +100,7 @@ class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
     val rackResolverUtil = mock(classOf[RackResolverUtil])
     when(rackResolverUtil.checkConfigured(sc.hadoopConfiguration)).thenReturn(false)
     val sched = new KubernetesTaskSchedulerImpl(sc, rackResolverUtil)
-    sched.backend = backend
+    sched.kubernetesSchedulerBackend = backend
     when(backend.getExecutorPodByIP("kube-node1")).thenReturn(None)
 
     val spec1 = mock(classOf[PodSpec])
@@ -117,8 +117,8 @@ class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
   }
 
   test("Detects if topology plugin is configured") {
-    val rackResolverUtil = new RackResolverUtil
     val hadoopConfiguration = new Configuration
+    val rackResolverUtil = new RackResolverUtil(hadoopConfiguration)
 
     assert(!rackResolverUtil.checkConfigured(hadoopConfiguration))
     hadoopConfiguration.set(CommonConfigurationKeysPublic.NET_TOPOLOGY_NODE_SWITCH_MAPPING_IMPL_KEY,

@@ -22,17 +22,23 @@ import org.apache.hadoop.net.{NetworkTopology, ScriptBasedMapping, TableMapping}
 import org.apache.hadoop.yarn.util.RackResolver
 import org.apache.log4j.{Level, Logger}
 
-import org.apache.spark.scheduler.{TaskSchedulerImpl, TaskSet, TaskSetManager}
+import org.apache.spark.scheduler.{SchedulerBackend, TaskSchedulerImpl, TaskSet, TaskSetManager}
 import org.apache.spark.util.Utils
 import org.apache.spark.SparkContext
 
 private[spark] class KubernetesTaskSchedulerImpl(
     sc: SparkContext,
-    rackResolverUtil: RackResolverUtil = new RackResolverUtil,
+    rackResolverUtil: RackResolverUtil,
     inetAddressUtil: InetAddressUtil = new InetAddressUtil) extends TaskSchedulerImpl(sc) {
 
-  rackResolverUtil.init(sc.hadoopConfiguration)
+  var kubernetesSchedulerBackend: KubernetesClusterSchedulerBackend = null
 
+  def this(sc: SparkContext) = this(sc, new RackResolverUtil(sc.hadoopConfiguration))
+
+  override def initialize(backend: SchedulerBackend): Unit = {
+    super.initialize(backend)
+    kubernetesSchedulerBackend = this.backend.asInstanceOf[KubernetesClusterSchedulerBackend]
+  }
   override def createTaskSetManager(taskSet: TaskSet, maxTaskFailures: Int): TaskSetManager = {
     new KubernetesTaskSetManager(this, taskSet, maxTaskFailures)
   }
@@ -49,44 +55,40 @@ private[spark] class KubernetesTaskSchedulerImpl(
 
   private def getRackForDatanodeOrExecutor(hostPort: String): Option[String] = {
     val host = Utils.parseHostPort(hostPort)._1
-    val backend = this.backend.asInstanceOf[KubernetesClusterSchedulerBackend]
-    val executorPod = backend.getExecutorPodByIP(host)
-    if (executorPod.isEmpty) {
-      // Find the rack of the datanode host.
-      rackResolverUtil.resolveRack(sc.hadoopConfiguration, host)
-    } else {
-      // Find the rack of the cluster node that the executor pod is running on.
-      val clusterNodeName = executorPod.get.getSpec.getNodeName
-      val rackByNodeName = rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeName)
-      if (rackByNodeName.nonEmpty) {
-        rackByNodeName
-      } else {
-        val clusterNodeIP = executorPod.get.getStatus.getHostIP
-        val rackByNodeIP = rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeIP)
+    val executorPod = kubernetesSchedulerBackend.getExecutorPodByIP(host)
+    executorPod.isEmpty match {
+      case true =>
+        // Find the rack of the datanode host.
+        rackResolverUtil.resolveRack(sc.hadoopConfiguration, host)
+      case false =>
+        // Find the rack of the cluster node that the executor pod is running on.
+        val clusterNodeName = executorPod.get.getSpec.getNodeName
+        val rackByNodeName = rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeName)
         if (rackByNodeName.nonEmpty) {
-          rackByNodeIP
+          rackByNodeName
         } else {
-          val clusterNodeFullName = inetAddressUtil.getFullHostName(clusterNodeIP)
-          rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeFullName)
+          val clusterNodeIP = executorPod.get.getStatus.getHostIP
+          val rackByNodeIP = rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeIP)
+          if (rackByNodeName.nonEmpty) {
+            rackByNodeIP
+          } else {
+            val clusterNodeFullName = inetAddressUtil.getFullHostName(clusterNodeIP)
+            rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeFullName)
+          }
         }
-      }
     }
   }
 }
 
-private[kubernetes] class RackResolverUtil {
+private[kubernetes] class RackResolverUtil(hadoopConfiguration: Configuration) {
 
-  val scriptPlugin = classOf[ScriptBasedMapping].getCanonicalName
-  val tablePlugin = classOf[TableMapping].getCanonicalName
+  val scriptPlugin : String = classOf[ScriptBasedMapping].getCanonicalName
+  val tablePlugin : String = classOf[TableMapping].getCanonicalName
+  val isConfigured : Boolean = checkConfigured(hadoopConfiguration)
 
-  var isConfigured = false
-
-  def init(hadoopConfiguration: Configuration) : Unit = {
-    isConfigured = checkConfigured(hadoopConfiguration)
-    // RackResolver logs an INFO message whenever it resolves a rack, which is way too often.
-    if (Logger.getLogger(classOf[RackResolver]).getLevel == null) {
-      Logger.getLogger(classOf[RackResolver]).setLevel(Level.WARN)
-    }
+  // RackResolver logs an INFO message whenever it resolves a rack, which is way too often.
+  if (Logger.getLogger(classOf[RackResolver]).getLevel == null) {
+    Logger.getLogger(classOf[RackResolver]).setLevel(Level.WARN)
   }
 
   def checkConfigured(hadoopConfiguration: Configuration): Boolean = {
