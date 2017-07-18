@@ -34,7 +34,7 @@ import io.fabric8.kubernetes.client.Watcher.Action
 import org.apache.commons.io.FilenameUtils
 
 import org.apache.spark.{SparkContext, SparkEnv, SparkException}
-import org.apache.spark.deploy.kubernetes.{ConfigurationUtils, InitContainerResourceStagingServerSecretPlugin, PodWithDetachedInitContainer, SparkPodInitContainerBootstrap}
+import org.apache.spark.deploy.kubernetes._
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.deploy.kubernetes.submit.{HadoopSecretUtil, InitContainerUtil}
@@ -50,6 +50,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     scheduler: TaskSchedulerImpl,
     val sc: SparkContext,
     executorInitContainerBootstrap: Option[SparkPodInitContainerBootstrap],
+    executorHadoopBootStrap: Option[HadoopConfBootstrap],
     executorMountInitContainerSecretPlugin: Option[InitContainerResourceStagingServerSecretPlugin],
     kubernetesClient: KubernetesClient)
   extends CoarseGrainedSchedulerBackend(scheduler, sc.env.rpcEnv) {
@@ -430,6 +431,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
    * @return A tuple of the new executor name and the Pod data structure.
    */
   private def allocateNewExecutorPod(nodeToLocalTaskCount: Map[String, Int]): (String, Pod) = {
+    import scala.collection.JavaConverters._
     val executorId = EXECUTOR_ID_COUNTER.incrementAndGet().toString
     val name = s"$executorPodNamePrefix-exec-$executorId"
 
@@ -584,6 +586,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
     val executorPodWithNodeAffinity = addNodeAffinityAnnotationIfUseful(
         executorPodWithInitContainer, nodeToLocalTaskCount)
+    // CHANGES
     val executorPodWithMountedHadoopToken = HadoopSecretUtil.configurePod(maybeMountedHadoopSecret,
       executorPodWithNodeAffinity)
     val containerWithMountedHadoopToken = HadoopSecretUtil.configureContainer(
@@ -592,10 +595,21 @@ private[spark] class KubernetesClusterSchedulerBackend(
     val resolvedExecutorPod = new PodBuilder(executorPodWithMountedHadoopToken)
       .editSpec()
         .addToContainers(containerWithMountedHadoopToken)
+    // CHANGES
+    val (executorHadoopConfPod, executorHadoopConfContainer) =
+      executorHadoopBootStrap.map { bootstrap =>
+        val podWithMainContainer = bootstrap.bootstrapMainContainerAndVolumes(
+          PodWithMainContainer(executorPodWithNodeAffinity, initBootstrappedExecutorContainer)
+        )
+        (podWithMainContainer.pod, podWithMainContainer.mainContainer)
+      }.getOrElse(executorPodWithNodeAffinity, initBootstrappedExecutorContainer)
+    val resolvedExecutorPod2 = new PodBuilder(executorHadoopConfPod)
+      .editSpec()
+        .addToContainers(executorHadoopConfContainer)
         .endSpec()
       .build()
     try {
-      (executorId, kubernetesClient.pods.create(resolvedExecutorPod))
+      (executorId, kubernetesClient.pods.create(resolvedExecutorPod2))
     } catch {
       case throwable: Throwable =>
         logError("Failed to allocate executor pod.", throwable)
