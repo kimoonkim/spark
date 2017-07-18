@@ -40,6 +40,7 @@ private[spark] class DriverConfigurationStepsOrchestrator(
     mainClass: String,
     appArgs: Array[String],
     additionalPythonFiles: Seq[String],
+    hadoopConfDir: Option[String],
     submissionSparkConf: SparkConf) {
 
   // The resource name prefix is derived from the application name, making it easy to connect the
@@ -98,10 +99,14 @@ private[spark] class DriverConfigurationStepsOrchestrator(
         submissionSparkConf)
     val kubernetesCredentialsStep = new DriverKubernetesCredentialsStep(
         submissionSparkConf, kubernetesResourceNamePrefix)
+    // CHANGES
     val hadoopCredentialsStep = new DriverHadoopCredentialsStep(submissionSparkConf)
-    val hadoopConfigurations =
+    val hadoopConfigurations2 =
       sys.env.get("HADOOP_CONF_DIR").map{ conf => getHadoopConfFiles(conf)}
           .getOrElse(Array.empty[File])
+    // CHANGES
+    val hadoopConfigurations = hadoopConfDir.map(conf => getHadoopConfFiles(conf))
+      .getOrElse(Array.empty[File])
     val hadoopConfigSteps =
       if (hadoopConfigurations.isEmpty) {
         Option.empty[DriverConfigurationStep]
@@ -110,7 +115,8 @@ private[spark] class DriverConfigurationStepsOrchestrator(
           namespace,
           hadoopConfigMapName,
           submissionSparkConf,
-          hadoopConfigurations)
+          hadoopConfigurations,
+          hadoopConfDir)
         val hadoopConfSteps =
           hadoopStepsOrchestrator.getHadoopSteps()
         Some(new HadoopConfigBootstrapStep(hadoopConfSteps, hadoopConfigMapName))
