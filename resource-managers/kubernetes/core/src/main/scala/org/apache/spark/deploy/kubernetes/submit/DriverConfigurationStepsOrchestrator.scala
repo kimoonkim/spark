@@ -108,14 +108,13 @@ private[spark] class DriverConfigurationStepsOrchestrator(
     val hadoopConfigurations = hadoopConfDir.map(conf => getHadoopConfFiles(conf))
       .getOrElse(Array.empty[File])
     val hadoopConfigSteps =
-      if (hadoopConfigurations.isEmpty) {
+      if (hadoopConfDir.isEmpty) {
         Option.empty[DriverConfigurationStep]
       } else {
         val hadoopStepsOrchestrator = new HadoopStepsOrchestrator(
           namespace,
           hadoopConfigMapName,
           submissionSparkConf,
-          hadoopConfigurations,
           hadoopConfDir)
         val hadoopConfSteps =
           hadoopStepsOrchestrator.getHadoopSteps()
@@ -163,14 +162,5 @@ private[spark] class DriverConfigurationStepsOrchestrator(
       initContainerBootstrapStep.toSeq ++
       hadoopConfigSteps.toSeq ++
       pythonStep.toSeq
-  }
-  private def getHadoopConfFiles(path: String) : Array[File] = {
-    def isFile(file: File) = if (file.isFile) Some(file) else None
-    val dir = new File(path)
-    if (dir.isDirectory) {
-      dir.listFiles.flatMap { file => isFile(file) }
-    } else {
-      Array.empty[File]
-    }
   }
 }
