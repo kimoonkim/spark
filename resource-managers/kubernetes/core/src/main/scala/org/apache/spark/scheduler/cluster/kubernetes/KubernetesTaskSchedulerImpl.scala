@@ -56,27 +56,21 @@ private[spark] class KubernetesTaskSchedulerImpl(
   private def getRackForDatanodeOrExecutor(hostPort: String): Option[String] = {
     val host = Utils.parseHostPort(hostPort)._1
     val executorPod = kubernetesSchedulerBackend.getExecutorPodByIP(host)
-    executorPod.isEmpty match {
-      case true =>
-        // Find the rack of the datanode host.
-        rackResolverUtil.resolveRack(sc.hadoopConfiguration, host)
-      case false =>
-        // Find the rack of the cluster node that the executor pod is running on.
-        val clusterNodeName = executorPod.get.getSpec.getNodeName
-        val rackByNodeName = rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeName)
-        if (rackByNodeName.nonEmpty) {
-          rackByNodeName
-        } else {
-          val clusterNodeIP = executorPod.get.getStatus.getHostIP
-          val rackByNodeIP = rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeIP)
-          if (rackByNodeName.nonEmpty) {
-            rackByNodeIP
-          } else {
-            val clusterNodeFullName = inetAddressUtil.getFullHostName(clusterNodeIP)
-            rackResolverUtil.resolveRack(sc.hadoopConfiguration, clusterNodeFullName)
-          }
+    val hadoopConfiguration = sc.hadoopConfiguration
+    executorPod.map(
+        pod => {
+          val clusterNodeName = pod.getSpec.getNodeName
+          val rackByNodeName = rackResolverUtil.resolveRack(hadoopConfiguration, clusterNodeName)
+          rackByNodeName.orElse({
+            val clusterNodeIP = pod.getStatus.getHostIP
+            val rackByNodeIP = rackResolverUtil.resolveRack(hadoopConfiguration, clusterNodeIP)
+            rackByNodeIP.orElse({
+              val clusterNodeFullName = inetAddressUtil.getFullHostName(clusterNodeIP)
+              rackResolverUtil.resolveRack(hadoopConfiguration, clusterNodeFullName)
+            })
+          })
         }
-    }
+      ).getOrElse(rackResolverUtil.resolveRack(hadoopConfiguration, host))
   }
 }
 
