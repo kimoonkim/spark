@@ -17,8 +17,6 @@
 package org.apache.spark.scheduler.cluster.kubernetes
 
 import io.fabric8.kubernetes.api.model.{Pod, PodSpec, PodStatus}
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.CommonConfigurationKeysPublic
 import org.mockito.Matchers._
 import org.mockito.Mockito._
 
@@ -98,7 +96,7 @@ class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
 
   test("Does not get racks if plugin is not configured") {
     val rackResolverUtil = mock(classOf[RackResolverUtil])
-    when(rackResolverUtil.checkConfigured(sc.hadoopConfiguration)).thenReturn(false)
+    when(rackResolverUtil.isConfigured()).thenReturn(false)
     val sched = new KubernetesTaskSchedulerImpl(sc, rackResolverUtil)
     sched.kubernetesSchedulerBackend = backend
     when(backend.getExecutorPodByIP("kube-node1")).thenReturn(None)
@@ -114,29 +112,5 @@ class KubernetesTaskSchedulerImplSuite extends SparkFunSuite {
 
     assert(sched.getRackForHost("kube-node1:60010").isEmpty)
     assert(sched.getRackForHost("10.0.0.1:7079").isEmpty)
-  }
-
-  test("Detects if topology plugin is configured") {
-    val hadoopConfiguration = new Configuration
-    val rackResolverUtil = new RackResolverUtil(hadoopConfiguration)
-
-    assert(!rackResolverUtil.checkConfigured(hadoopConfiguration))
-    hadoopConfiguration.set(CommonConfigurationKeysPublic.NET_TOPOLOGY_NODE_SWITCH_MAPPING_IMPL_KEY,
-      rackResolverUtil.scriptPlugin)
-    assert(!rackResolverUtil.checkConfigured(hadoopConfiguration))
-    hadoopConfiguration.set(CommonConfigurationKeysPublic.NET_TOPOLOGY_SCRIPT_FILE_NAME_KEY,
-      "my-script")
-    assert(rackResolverUtil.checkConfigured(hadoopConfiguration))
-
-    hadoopConfiguration.set(CommonConfigurationKeysPublic.NET_TOPOLOGY_NODE_SWITCH_MAPPING_IMPL_KEY,
-      rackResolverUtil.tablePlugin)
-    assert(!rackResolverUtil.checkConfigured(hadoopConfiguration))
-    hadoopConfiguration.set(CommonConfigurationKeysPublic.NET_TOPOLOGY_TABLE_MAPPING_FILE_KEY,
-      "my-table")
-    assert(rackResolverUtil.checkConfigured(hadoopConfiguration))
-
-    hadoopConfiguration.set(CommonConfigurationKeysPublic.NET_TOPOLOGY_NODE_SWITCH_MAPPING_IMPL_KEY,
-      "my.Plugin")
-    assert(rackResolverUtil.checkConfigured(hadoopConfiguration))
   }
 }
