@@ -40,6 +40,7 @@ private[spark] object HDFSTest{
       val end = System.currentTimeMillis()
       println("Iteration " + iter + " took " + (end-start) + " ms")
     }
+    println(s"Returned length(s) of: ${file.map(s => s.length).collect().mkString(",")}")
     // scalastyle:on println
     spark.stop()
   }

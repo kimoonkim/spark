@@ -27,10 +27,8 @@ import org.apache.spark.internal.Logging
   * mounted the DT secret for executors as well.
   */
 private[spark] trait KerberosTokenBootstrapConf {
-  /**
-    * Bootstraps a main container with the Secret mounted as volumes and an ENV variable
-    * pointing to the mounted file containing the DT for Secure HDFS interaction
-    */
+  // Bootstraps a main container with the Secret mounted as volumes and an ENV variable
+  // pointing to the mounted file containing the DT for Secure HDFS interaction
   def bootstrapMainContainerAndVolumes(
   originalPodWithMainContainer: PodWithMainContainer)
   : PodWithMainContainer

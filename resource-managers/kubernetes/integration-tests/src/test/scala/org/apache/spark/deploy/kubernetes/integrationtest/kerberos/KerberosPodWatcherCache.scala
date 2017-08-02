@@ -28,9 +28,9 @@ import io.fabric8.kubernetes.client.Watcher.Action
 import org.apache.spark.internal.Logging
 
  /**
-  * This class if used to ensure that the Hadoop cluster that is launched is executed
+  * This class is used to ensure that the Hadoop cluster that is launched is executed
   * in this order: KDC --> NN --> DN --> Data-Populator and that each one of these nodes
-  * is running before launching the kerberos test.
+  * is running before launching the Kerberos test.
   */
 private[spark] class KerberosPodWatcherCache(
   kerberosUtils: KerberosUtils,
@@ -220,14 +220,12 @@ private[spark] class KerberosPodWatcherCache(
         while (!kdcIsUp) kdcRunning.await()
         while (!nnIsUp) nnRunning.await()
         while (!dnIsUp) dnRunning.await()
-        while (!hasInLogs(dnName, "Computing capacity for map BlockMap")) {
+        while (!hasInLogs(dnName, "Got finalize command for block pool")) {
           logInfo("Waiting on DN to be formatted")
           Thread.sleep(500)
         }
-        Thread.sleep(2000)
         dpIsUp = true
         logInfo(s"data-populator has signaled")
-
         try {
           dpRunning.signalAll()
         } finally {
@@ -245,6 +243,7 @@ private[spark] class KerberosPodWatcherCache(
       case _ if name.startsWith("data-populator") => "data-populator"
     }
   }
+
   private def hasInLogs(name: String, expectation: String): Boolean = {
     kubernetesClient
       .pods()

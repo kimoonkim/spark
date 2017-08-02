@@ -104,8 +104,6 @@
     <name>dfs.namenode.datanode.registration.ip-hostname-check</name>
     <value>false</value>
   </property>
-
-
   <property>
     <name>dfs.datanode.data.dir.perm</name>
     <value>700</value> 

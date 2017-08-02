@@ -39,16 +39,21 @@ private[spark] class KerberosUtils(
   def loadFromYaml(resource: String): FileInputStream =
     new FileInputStream(new File(yamlLocation(resource)))
   private val regex = "REPLACE_ME".r
+  private val regexDP = "# default_ccache_name = MEMORY".r
+  private val defaultCacheDP = "default_ccache_name = KRBCONF"
   private def locationResolver(loc: String) = s"src/test/resources/$loc"
   private val kerberosFiles = Seq("krb5.conf", "core-site.xml", "hdfs-site.xml")
   private val kerberosConfTupList =
     kerberosFiles.map { file =>
-      (file, regex.replaceAllIn(readFileToString(new File(locationResolver(file))), namespace))}
+      (file, regex.replaceAllIn(readFileToString(new File(locationResolver(file))), namespace))} ++
+      Seq(("krb5-dp.conf", regexDP.replaceAllIn(regex.replaceAllIn(readFileToString(
+        new File(locationResolver("krb5.conf"))), namespace), defaultCacheDP)))
   private val KRB_VOLUME = "krb5-conf"
   private val KRB_FILE_DIR = "/tmp"
   private val KRB_CONFIG_MAP_NAME = "krb-config-map"
   private val PV_LABELS = Map("job" -> "kerberostest")
-  private val keyPaths: Seq[KeyToPath] = kerberosFiles.map(file =>
+  private val keyPaths: Seq[KeyToPath] = (kerberosFiles ++ Seq("krb5-dp.conf"))
+    .map(file =>
     new KeyToPathBuilder()
       .withKey(file)
       .withPath(file)
@@ -101,6 +106,10 @@ private[spark] class KerberosUtils(
               .addNewEnv()
                 .withName("TMP_KRB_LOC")
                 .withValue(s"$KRB_FILE_DIR/${kerberosFiles.head}")
+                .endEnv()
+              .addNewEnv()
+                .withName("TMP_KRB_DP_LOC")
+                .withValue(s"$KRB_FILE_DIR/krb5-dp.conf")
                 .endEnv()
               .addNewEnv()
                 .withName("TMP_CORE_LOC")
