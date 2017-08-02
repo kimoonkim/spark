@@ -16,22 +16,28 @@
  */
 package org.apache.spark.deploy.kubernetes.integrationtest
 
+import java.io.File
 import java.nio.file.Paths
 import java.util.UUID
 
+import com.google.common.base.Charsets
+import com.google.common.io.Files
 import io.fabric8.kubernetes.client.internal.readiness.Readiness
-import org.apache.spark.{SSLOptions, SparkConf, SparkFunSuite}
+import org.scalatest.BeforeAndAfter
+import org.scalatest.concurrent.{Eventually, PatienceConfiguration}
+import org.scalatest.time.{Minutes, Seconds, Span}
+import scala.collection.JavaConverters._
+
+import org.apache.spark.{SparkConf, SparkFunSuite, SSLOptions}
+import org.apache.spark.deploy.kubernetes.SSLUtils
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.integrationtest.backend.IntegrationTestBackendFactory
 import org.apache.spark.deploy.kubernetes.integrationtest.backend.minikube.Minikube
 import org.apache.spark.deploy.kubernetes.integrationtest.constants.MINIKUBE_TEST_BACKEND
 import org.apache.spark.deploy.kubernetes.integrationtest.kerberos.KerberosDriverWatcherCache
-import org.apache.spark.deploy.kubernetes.submit._
-import org.scalatest.BeforeAndAfter
-import org.scalatest.concurrent.{Eventually, PatienceConfiguration}
-import org.scalatest.time.{Minutes, Seconds, Span}
-
-import scala.collection.JavaConverters._
+import org.apache.spark.deploy.kubernetes.submit.{Client, ClientArguments, JavaMainAppResource, KeyAndCertPem, MainAppResource, PythonMainAppResource}
+import org.apache.spark.launcher.SparkLauncher
+import org.apache.spark.util.Utils
 
 private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
   import KubernetesSuite._
