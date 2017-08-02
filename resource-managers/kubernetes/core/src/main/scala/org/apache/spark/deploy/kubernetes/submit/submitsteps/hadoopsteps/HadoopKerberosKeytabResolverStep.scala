@@ -31,9 +31,9 @@ import org.apache.hadoop.security.token.{Token, TokenIdentifier}
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier
 
 import org.apache.spark.SparkConf
-import org.apache.spark.deploy.kubernetes.{KerberosConfBootstrapImpl, PodWithMainContainer}
-import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.deploy.SparkHadoopUtil
+import org.apache.spark.deploy.kubernetes.{KerberosTokenConfBootstrapImpl, PodWithMainContainer}
+import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.internal.Logging
 
  /**
@@ -101,18 +101,18 @@ private[spark] class HadoopKerberosKeytabResolverStep(
     if (renewedTokens.isEmpty) logError("Did not obtain any Delegation Tokens")
     val data = serialize(renewedCredentials)
     val renewalTime = getTokenRenewalInterval(renewedTokens, hadoopConf).getOrElse(Long.MaxValue)
-    val delegationToken = HDFSDelegationToken(data, renewalTime)
     val currentTime: Long = System.currentTimeMillis()
     val initialTokenLabelName = s"$KERBEROS_SECRET_LABEL_PREFIX-$currentTime-$renewalTime"
-    logInfo(s"Storing dt in $initialTokenLabelName")
     val secretDT =
       new SecretBuilder()
         .withNewMetadata()
           .withName(HADOOP_KERBEROS_SECRET_NAME)
           .endMetadata()
-          .addToData(initialTokenLabelName, Base64.encodeBase64String(delegationToken.bytes))
+          .addToData(initialTokenLabelName, Base64.encodeBase64String(data))
       .build()
-    val bootstrapKerberos = new KerberosConfBootstrapImpl(initialTokenLabelName)
+    val bootstrapKerberos = new KerberosTokenConfBootstrapImpl(
+      HADOOP_KERBEROS_SECRET_NAME,
+      initialTokenLabelName)
     val withKerberosEnvPod = bootstrapKerberos.bootstrapMainContainerAndVolumes(
       PodWithMainContainer(
         hadoopConfigSpec.driverPod,
@@ -120,10 +120,13 @@ private[spark] class HadoopKerberosKeytabResolverStep(
     hadoopConfigSpec.copy(
       additionalDriverSparkConf =
         hadoopConfigSpec.additionalDriverSparkConf ++ Map(
-          KERBEROS_SPARK_CONF_NAME -> initialTokenLabelName),
+          HADOOP_KERBEROS_CONF_LABEL -> initialTokenLabelName,
+          HADOOP_KERBEROS_CONF_SECRET -> HADOOP_KERBEROS_SECRET_NAME),
       driverPod = withKerberosEnvPod.pod,
       driverContainer = withKerberosEnvPod.mainContainer,
-      dtSecret = Some(secretDT))
+      dtSecret = Some(secretDT),
+      dtSecretName = HADOOP_KERBEROS_SECRET_NAME,
+      dtSecretLabel = initialTokenLabelName)
   }
 
   // Functions that should be in Core with Rebase to 2.3

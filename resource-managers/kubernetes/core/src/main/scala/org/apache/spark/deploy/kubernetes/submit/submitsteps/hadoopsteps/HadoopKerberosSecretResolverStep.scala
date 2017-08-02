@@ -17,7 +17,8 @@
 package org.apache.spark.deploy.kubernetes.submit.submitsteps.hadoopsteps
 
 import org.apache.spark.SparkConf
-import org.apache.spark.deploy.kubernetes.{KerberosConfBootstrapImpl, PodWithMainContainer}
+import org.apache.spark.deploy.kubernetes.{KerberosTokenConfBootstrapImpl, PodWithMainContainer}
+import org.apache.spark.deploy.kubernetes.constants._
 
  /**
   * This step assumes that you have already done all the heavy lifting in retrieving a
@@ -31,13 +32,22 @@ private[spark] class HadoopKerberosSecretResolverStep(
   tokenLabelName: String) extends HadoopConfigurationStep {
 
   override def configureContainers(hadoopConfigSpec: HadoopConfigSpec): HadoopConfigSpec = {
-    val bootstrapKerberos = new KerberosConfBootstrapImpl(tokenLabelName)
+    val bootstrapKerberos = new KerberosTokenConfBootstrapImpl(
+      tokenSecretName,
+      tokenLabelName)
     val withKerberosEnvPod = bootstrapKerberos.bootstrapMainContainerAndVolumes(
       PodWithMainContainer(
         hadoopConfigSpec.driverPod,
         hadoopConfigSpec.driverContainer))
     hadoopConfigSpec.copy(
       driverPod = withKerberosEnvPod.pod,
-      driverContainer = withKerberosEnvPod.mainContainer)
+      driverContainer = withKerberosEnvPod.mainContainer,
+      additionalDriverSparkConf =
+        hadoopConfigSpec.additionalDriverSparkConf ++ Map(
+          HADOOP_KERBEROS_CONF_LABEL -> tokenLabelName,
+          HADOOP_KERBEROS_CONF_SECRET -> tokenSecretName),
+      dtSecret = None,
+      dtSecretName = tokenSecretName,
+      dtSecretLabel = tokenLabelName)
   }
 }

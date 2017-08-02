@@ -37,7 +37,7 @@ import org.apache.spark.{SparkContext, SparkEnv, SparkException}
 import org.apache.spark.deploy.kubernetes._
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
-import org.apache.spark.deploy.kubernetes.submit.{HadoopSecretUtil, InitContainerUtil}
+import org.apache.spark.deploy.kubernetes.submit.InitContainerUtil
 import org.apache.spark.network.netty.SparkTransportConf
 import org.apache.spark.network.shuffle.kubernetes.KubernetesExternalShuffleClient
 import org.apache.spark.rpc.{RpcAddress, RpcCallContext, RpcEndpointAddress, RpcEnv}
@@ -51,7 +51,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     val sc: SparkContext,
     executorInitContainerBootstrap: Option[SparkPodInitContainerBootstrap],
     executorHadoopBootStrap: Option[HadoopConfBootstrap],
-    executorKerberosBootStrap: Option[KerberosConfBootstrap],
+    executorKerberosBootStrap: Option[KerberosTokenBootstrapConf],
     executorMountInitContainerSecretPlugin: Option[InitContainerResourceStagingServerSecretPlugin],
     kubernetesClient: KubernetesClient)
   extends CoarseGrainedSchedulerBackend(scheduler, sc.env.rpcEnv) {
@@ -586,16 +586,6 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
     val executorPodWithNodeAffinity = addNodeAffinityAnnotationIfUseful(
         executorPodWithInitContainer, nodeToLocalTaskCount)
-    // CHANGES
-    val executorPodWithMountedHadoopToken = HadoopSecretUtil.configurePod(maybeMountedHadoopSecret,
-      executorPodWithNodeAffinity)
-    val containerWithMountedHadoopToken = HadoopSecretUtil.configureContainer(
-      maybeMountedHadoopSecret, initBootstrappedExecutorContainer)
-
-    val resolvedExecutorPod = new PodBuilder(executorPodWithMountedHadoopToken)
-      .editSpec()
-        .addToContainers(containerWithMountedHadoopToken)
-    // CHANGES
     val (executorHadoopConfPod, executorHadoopConfContainer) =
       executorHadoopBootStrap.map { bootstrap =>
         val podWithMainContainer = bootstrap.bootstrapMainContainerAndVolumes(
@@ -603,21 +593,19 @@ private[spark] class KubernetesClusterSchedulerBackend(
         )
         (podWithMainContainer.pod, podWithMainContainer.mainContainer)
       }.getOrElse(executorPodWithNodeAffinity, initBootstrappedExecutorContainer)
-    val resolvedExecutorPod = new PodBuilder(executorHadoopConfPod)
     val (executorKerberosPod, executorKerberosContainer) =
       executorKerberosBootStrap.map { bootstrap =>
         val podWithMainContainer = bootstrap.bootstrapMainContainerAndVolumes(
-          PodWithMainContainer(executorHadoopConfPod, executorHadoopConfContainer)
-        )
+          PodWithMainContainer(executorHadoopConfPod, executorHadoopConfContainer))
         (podWithMainContainer.pod, podWithMainContainer.mainContainer)
       }.getOrElse((executorHadoopConfPod, executorHadoopConfContainer))
-    val resolvedExecutorPod2 = new PodBuilder(executorKerberosPod)
+    val resolvedExecutorPod = new PodBuilder(executorKerberosPod)
       .editSpec()
         .addToContainers(executorKerberosContainer)
         .endSpec()
       .build()
     try {
-      (executorId, kubernetesClient.pods.create(resolvedExecutorPod2))
+      (executorId, kubernetesClient.pods.create(resolvedExecutorPod))
     } catch {
       case throwable: Throwable =>
         logError("Failed to allocate executor pod.", throwable)

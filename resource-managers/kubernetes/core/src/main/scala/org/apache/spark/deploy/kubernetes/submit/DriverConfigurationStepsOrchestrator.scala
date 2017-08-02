@@ -16,8 +16,6 @@
  */
 package org.apache.spark.deploy.kubernetes.submit
 
-import java.io.File
-
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.ConfigurationUtils
 import org.apache.spark.deploy.kubernetes.config._
@@ -99,14 +97,6 @@ private[spark] class DriverConfigurationStepsOrchestrator(
         submissionSparkConf)
     val kubernetesCredentialsStep = new DriverKubernetesCredentialsStep(
         submissionSparkConf, kubernetesResourceNamePrefix)
-    // CHANGES
-    val hadoopCredentialsStep = new DriverHadoopCredentialsStep(submissionSparkConf)
-    val hadoopConfigurations2 =
-      sys.env.get("HADOOP_CONF_DIR").map{ conf => getHadoopConfFiles(conf)}
-          .getOrElse(Array.empty[File])
-    // CHANGES
-    val hadoopConfigurations = hadoopConfDir.map(conf => getHadoopConfFiles(conf))
-      .getOrElse(Array.empty[File])
     val hadoopConfigSteps =
       if (hadoopConfDir.isEmpty) {
         Option.empty[DriverConfigurationStep]
@@ -157,7 +147,6 @@ private[spark] class DriverConfigurationStepsOrchestrator(
     Seq(
       initialSubmissionStep,
       kubernetesCredentialsStep,
-      hadoopCredentialsStep,
       dependencyResolutionStep) ++
       initContainerBootstrapStep.toSeq ++
       hadoopConfigSteps.toSeq ++

@@ -67,7 +67,7 @@
   <!-- DataNode security config -->
   <property>
     <name>dfs.data.transfer.protection</name>
-    <value>integrity</value>
+    <value>authentication</value>
   </property>
    
   <property>
@@ -116,6 +116,10 @@
   </property>
   <property>
     <name>dfs.datanode.name.dir</name>
+    <value>file:///hadoop/etc/data</value>
+  </property>
+  <property>
+    <name>dfs.data.dir</name>
     <value>file:///hadoop/etc/data</value>
   </property>
   <property>

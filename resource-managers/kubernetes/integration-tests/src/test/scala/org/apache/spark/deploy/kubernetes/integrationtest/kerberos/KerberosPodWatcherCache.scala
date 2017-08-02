@@ -56,6 +56,7 @@ private[spark] class KerberosPodWatcherCache(
   private var nnSpawned: Boolean = false
   private var dnSpawned: Boolean = false
   private var dpSpawned: Boolean = false
+  private var dnName: String = _
 
   private val blockingThread = new Thread(new Runnable {
     override def run(): Unit = {
@@ -93,6 +94,7 @@ private[spark] class KerberosPodWatcherCache(
               case Action.ADDED | Action.MODIFIED =>
                 val phase = resource.getStatus.getPhase
                 logInfo(s"$name is as $phase")
+                if (name.startsWith("dn1")) { dnName = name }
                 podCache(keyName) = phase
                 if (maybeDeploymentAndServiceDone(keyName)) {
                   val modifyAndSignal: Runnable = new MSThread(keyName)
@@ -218,8 +220,14 @@ private[spark] class KerberosPodWatcherCache(
         while (!kdcIsUp) kdcRunning.await()
         while (!nnIsUp) nnRunning.await()
         while (!dnIsUp) dnRunning.await()
+        while (!hasInLogs(dnName, "Computing capacity for map BlockMap")) {
+          logInfo("Waiting on DN to be formatted")
+          Thread.sleep(500)
+        }
+        Thread.sleep(2000)
         dpIsUp = true
         logInfo(s"data-populator has signaled")
+
         try {
           dpRunning.signalAll()
         } finally {
@@ -236,5 +244,11 @@ private[spark] class KerberosPodWatcherCache(
       case _ if name.startsWith("dn1") => "dn1"
       case _ if name.startsWith("data-populator") => "data-populator"
     }
+  }
+  private def hasInLogs(name: String, expectation: String): Boolean = {
+    kubernetesClient
+      .pods()
+      .withName(name)
+      .getLog().contains(expectation)
   }
 }

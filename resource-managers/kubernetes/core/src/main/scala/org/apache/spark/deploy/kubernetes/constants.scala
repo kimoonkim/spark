@@ -45,9 +45,6 @@ package object constants {
 
   // Hadoop credentials secrets for the Spark app.
   private[spark] val SPARK_APP_HADOOP_CREDENTIALS_BASE_DIR = "/mnt/secrets/hadoop-credentials"
-  private[spark] val SPARK_APP_HADOOP_TOKEN_FILE_SECRET_NAME = "hadoop-token-file"
-  private[spark] val SPARK_APP_HADOOP_TOKEN_FILE_PATH =
-    s"$SPARK_APP_HADOOP_CREDENTIALS_BASE_DIR/$SPARK_APP_HADOOP_TOKEN_FILE_SECRET_NAME"
   private[spark] val SPARK_APP_HADOOP_SECRET_VOLUME_NAME = "hadoop-secret"
 
   // Default and fixed ports
@@ -110,12 +107,12 @@ package object constants {
   // Kerberos Configuration
   private[spark] val HADOOP_KERBEROS_SECRET_NAME =
     "spark.kubernetes.kerberos.dt"
-  private[spark] val KERBEROS_SPARK_CONF_NAME =
-    "spark.kubernetes.kerberos.secretlabelname"
+  private[spark] val HADOOP_KERBEROS_CONF_SECRET =
+    "spark.kubernetes.kerberos.secretname"
+  private[spark] val HADOOP_KERBEROS_CONF_LABEL =
+    "spark.kubernetes.kerberos.labelname"
   private[spark] val KERBEROS_SECRET_LABEL_PREFIX =
     "hadoop-tokens"
-  private[spark] val ENV_KERBEROS_SECRET_LABEL =
-    "KERBEROS_SECRET_LABEL"
 
   // Miscellaneous
   private[spark] val ANNOTATION_EXECUTOR_NODE_AFFINITY = "scheduler.alpha.kubernetes.io/affinity"

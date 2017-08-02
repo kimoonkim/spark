@@ -29,10 +29,14 @@ import io.fabric8.kubernetes.api.model.{Container, Pod, Secret}
   * - The properties that will be stored into the config map which have (key, value)
   *   pairs of (path, data)
   * - The secret containing a DT, either previously specified or built on the fly
+  * - The name of the secret where the DT will be stored
+  * - The label on the secret which correlates with where the current DT data is stored
   */
 private[spark] case class HadoopConfigSpec(
   additionalDriverSparkConf: Map[String, String],
   driverPod: Pod,
   driverContainer: Container,
   configMapProperties: Map[String, String],
-  dtSecret: Option[Secret])
+  dtSecret: Option[Secret],
+  dtSecretName: String,
+  dtSecretLabel: String)
