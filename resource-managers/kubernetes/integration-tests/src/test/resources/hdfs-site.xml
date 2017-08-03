@@ -67,9 +67,8 @@
   <!-- DataNode security config -->
   <property>
     <name>dfs.data.transfer.protection</name>
-    <value>authentication</value>
+    <value>integrity</value>
   </property>
-   
   <property>
     <name>dfs.datanode.address</name>
     <value>0.0.0.0:10019</value>
@@ -127,6 +126,18 @@
   <property>
     <name>dfs.datanode.kerberos.principal</name>
     <value>hdfs/dn1.REPLACE_ME.svc.cluster.local@CLUSTER.LOCAL</value>
+  </property>
+  <property>
+    <name>dfs.encrypt.data.transfer</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>dfs.encrypt.data.transfer.cipher.suites</name>
+    <value>AES/CTR/NoPadding</value>
+  </property>
+  <property>
+    <name>dfs.encrypt.data.transfer.cipher.key.bitlength</name>
+    <value>256</value>
   </property>
 
   <!-- Web Authentication config -->

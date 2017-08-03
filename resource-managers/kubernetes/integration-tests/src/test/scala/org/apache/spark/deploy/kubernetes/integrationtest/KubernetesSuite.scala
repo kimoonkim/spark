@@ -78,7 +78,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
   }
 
   after {
-    kubernetesTestComponents.deleteKubernetesResources()
+    kubernetesTestComponents.deleteKubernetesPVs()
     kubernetesTestComponents.deleteNamespace()
   }
 
@@ -105,7 +105,9 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
       Map("spark-app-locator" -> APP_LOCATOR_LABEL))
     driverWatcherCache.start()
     driverWatcherCache.stop()
-    val expectedLogOnCompletion = Seq("Returned length(s) of:")
+    val expectedLogOnCompletion = Seq(
+        "Returned length(s) of: 1",
+        "File contents: [This is an awesome word count file]")
     val driverPod = kubernetesClient
       .pods()
       .withLabel("spark-app-locator", APP_LOCATOR_LABEL)

@@ -39,7 +39,21 @@ private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesCl
       .endMetadata()
       .done()
   }
-
+  def deleteKubernetesPVs(): Unit = {
+      // Temporary hack until client library for fabric8 is updated to get around
+      // the NPE that comes about when I do .list().getItems().asScala
+      try {
+        val pvList = kubernetesClient.persistentVolumes().list().getItems().asScala
+        if (pvList.nonEmpty) {
+          kubernetesClient.persistentVolumes().delete()
+          Eventually.eventually(KubernetesSuite.TIMEOUT, KubernetesSuite.INTERVAL) {
+            require(!pvList.exists(_.getMetadata.getNamespace == namespace))
+          }
+        }
+      } catch {
+        case ex: java.lang.NullPointerException =>
+      }
+  }
   def deleteNamespace(): Unit = {
     defaultClient.namespaces.withName(namespace).delete()
     Eventually.eventually(KubernetesSuite.TIMEOUT, KubernetesSuite.INTERVAL) {
@@ -49,27 +63,6 @@ private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesCl
         .getItems()
         .asScala
       require(!namespaceList.exists(_.getMetadata.getName == namespace))
-    }
-  }
-
-  def deleteKubernetesResources(): Unit = {
-    kubernetesClient.persistentVolumes().delete()
-    Eventually.eventually(KubernetesSuite.TIMEOUT, KubernetesSuite.INTERVAL) {
-      val persistentList = kubernetesClient
-        .persistentVolumes()
-        .list()
-        .getItems()
-        .asScala
-      require(!persistentList.exists(_.getMetadata.getNamespace == namespace))
-    }
-    kubernetesClient.configMaps().delete()
-    Eventually.eventually(KubernetesSuite.TIMEOUT, KubernetesSuite.INTERVAL) {
-      val configMapsList = kubernetesClient
-        .configMaps()
-        .list()
-        .getItems()
-        .asScala
-      require(!configMapsList.exists(_.getMetadata.getNamespace == namespace))
     }
   }
 

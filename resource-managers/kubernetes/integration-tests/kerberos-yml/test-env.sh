@@ -19,6 +19,7 @@ until /usr/bin/kinit -kt /var/keytabs/hdfs.keytab hdfs/nn.${NAMESPACE}.svc.clust
       --conf spark.kubernetes.executor.docker.image=spark-executor:latest \
       --conf spark.kubernetes.initcontainer.docker.image=spark-init:latest \
       --conf spark.hadoop.fs.defaultFS=hdfs://nn.${NAMESPACE}.svc.cluster.local:9000 \
+      --conf spark.hadoop.dfs.data.transfer.protection=authentication \
       --conf spark.kubernetes.kerberos=true \
       --conf spark.kubernetes.kerberos.keytab=/var/keytabs/hdfs.keytab \
       --conf spark.kubernetes.kerberos.principal=hdfs/nn.${NAMESPACE}.svc.cluster.local@CLUSTER.LOCAL \
