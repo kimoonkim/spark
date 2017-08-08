@@ -19,6 +19,7 @@ package org.apache.spark.deploy.kubernetes.integrationtest
 import io.fabric8.kubernetes.client.KubernetesClient
 
 import org.apache.spark.deploy.kubernetes.integrationtest.kerberos._
+import org.apache.spark.internal.Logging
 
  /**
   * This class is responsible for launching a psuedo-distributed, single noded,
@@ -29,7 +30,7 @@ import org.apache.spark.deploy.kubernetes.integrationtest.kerberos._
   */
 private[spark] class KerberizedHadoopClusterLauncher(
     kubernetesClient: KubernetesClient,
-    namespace: String) {
+    namespace: String) extends Logging {
    private val LABELS = Map("job" -> "kerberostest")
 
    def launchKerberizedCluster(): Unit = {
@@ -47,6 +48,10 @@ private[spark] class KerberizedHadoopClusterLauncher(
      // Launches the Hadoop cluster pods: KDC --> NN --> DN1 --> Data-Populator
      val podWatcherCache = new KerberosPodWatcherCache(kerberosUtils, LABELS)
      podWatcherCache.start()
-     podWatcherCache.stop()
+     val dpNode = podWatcherCache.stop()
+     while (!podWatcherCache.hasInLogs(dpNode, "")) {
+       logInfo("Waiting for data-populator to be formatted")
+       Thread.sleep(500)
+     }
    }
 }

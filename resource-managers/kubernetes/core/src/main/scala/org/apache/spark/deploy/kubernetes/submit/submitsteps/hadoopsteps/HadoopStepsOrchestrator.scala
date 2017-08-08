@@ -19,7 +19,7 @@ package org.apache.spark.deploy.kubernetes.submit.submitsteps.hadoopsteps
 import java.io.File
 
 import org.apache.spark.SparkConf
-import org.apache.spark.deploy.kubernetes.HadoopConfBootstrapImpl
+import org.apache.spark.deploy.kubernetes.{HadoopConfBootstrapImpl, OptionRequirements}
 import org.apache.spark.deploy.kubernetes.config._
 
 
@@ -30,16 +30,35 @@ private[spark] class HadoopStepsOrchestrator(
   namespace: String,
   hadoopConfigMapName: String,
   submissionSparkConf: SparkConf,
-  hadoopConfDir: Option[String]) {
-  private val maybeKerberosSupport = submissionSparkConf.get(KUBERNETES_KERBEROS_SUPPORT)
+  hadoopConfDir: String) {
+  private val isKerberosEnabled = submissionSparkConf.get(KUBERNETES_KERBEROS_SUPPORT)
   private val maybePrincipal = submissionSparkConf.get(KUBERNETES_KERBEROS_PRINCIPAL)
   private val maybeKeytab = submissionSparkConf.get(KUBERNETES_KERBEROS_KEYTAB)
     .map(k => new File(k))
   private val maybeExistingSecret = submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_NAME)
   private val maybeExistingSecretLabel =
     submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_LABEL)
-  private val hadoopConfigurationFiles = hadoopConfDir.map(conf => getHadoopConfFiles(conf))
-     .getOrElse(Seq.empty[File])
+  private val hadoopConfigurationFiles = getHadoopConfFiles(hadoopConfDir)
+
+   require(maybeKeytab.forall( _ => isKerberosEnabled ),
+     "You must enable Kerberos support if you are specifying a Kerberos Keytab")
+
+   require(maybeExistingSecret.forall( _ => isKerberosEnabled ),
+     "You must enable Kerberos support if you are specifying a Kerberos Secret")
+
+   OptionRequirements.requireBothOrNeitherDefined(
+     maybeKeytab,
+     maybePrincipal,
+    "If a Kerberos keytab is specified you must also specify a Kerberos principal",
+     "If a Kerberos principal is specified you must also specify a Kerberos keytab")
+
+   OptionRequirements.requireBothOrNeitherDefined(
+     maybeExistingSecret,
+     maybeExistingSecretLabel,
+     "If a secret storing a Kerberos Delegation Token is specified you must also" +
+     " specify the label where the data is stored",
+     "If a secret label where the data of the Kerberos Delegation Token is specified" +
+       " you must also specify the name of the secret")
 
   def getHadoopSteps(): Seq[HadoopConfigurationStep] = {
     val hadoopConfBootstrapImpl = new HadoopConfBootstrapImpl(
@@ -51,11 +70,11 @@ private[spark] class HadoopStepsOrchestrator(
       hadoopConfBootstrapImpl,
       hadoopConfDir)
     val maybeKerberosStep =
-      if (maybeKerberosSupport) {
+      if (isKerberosEnabled) {
         maybeExistingSecret.map(secretLabel => Some(new HadoopKerberosSecretResolverStep(
          submissionSparkConf,
           secretLabel,
-          maybeExistingSecretLabel))).getOrElse(Some(
+          maybeExistingSecretLabel.get))).getOrElse(Some(
             new HadoopKerberosKeytabResolverStep(
               submissionSparkConf,
               maybePrincipal,
@@ -65,6 +84,7 @@ private[spark] class HadoopStepsOrchestrator(
       }
     Seq(hadoopConfMounterStep) ++ maybeKerberosStep.toSeq
   }
+
   private def getHadoopConfFiles(path: String) : Seq[File] = {
      def isFile(file: File) = if (file.isFile) Some(file) else None
      val dir = new File(path)

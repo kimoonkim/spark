@@ -32,8 +32,8 @@ import org.apache.spark.internal.Logging
  */
 private[spark] trait HadoopConfBootstrap {
  /**
-  * Bootstraps a main container with the ConfigMaps mounted as volumes and an ENV variable
-  * pointing to the mounted file.
+  * Bootstraps a main container with the ConfigMaps containing Hadoop config files
+  * mounted as volumes and an ENV variable pointing to the mounted file.
   */
   def bootstrapMainContainerAndVolumes(
     originalPodWithMainContainer: PodWithMainContainer)
@@ -68,11 +68,11 @@ private[spark] class HadoopConfBootstrapImpl(
       originalPodWithMainContainer.mainContainer)
       .addNewVolumeMount()
         .withName(HADOOP_FILE_VOLUME)
-        .withMountPath(HADOOP_FILE_DIR)
+        .withMountPath(HADOOP_CONF_DIR_PATH)
         .endVolumeMount()
       .addNewEnv()
-        .withName(HADOOP_CONF_DIR)
-        .withValue(HADOOP_FILE_DIR)
+        .withName(ENV_HADOOP_CONF_DIR)
+        .withValue(HADOOP_CONF_DIR_PATH)
         .endEnv()
       .build()
     originalPodWithMainContainer.copy(

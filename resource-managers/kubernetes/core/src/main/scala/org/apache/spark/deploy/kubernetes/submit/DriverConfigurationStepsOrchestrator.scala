@@ -98,18 +98,12 @@ private[spark] class DriverConfigurationStepsOrchestrator(
     val kubernetesCredentialsStep = new DriverKubernetesCredentialsStep(
         submissionSparkConf, kubernetesResourceNamePrefix)
     val hadoopConfigSteps =
-      if (hadoopConfDir.isEmpty) {
-        Option.empty[DriverConfigurationStep]
-      } else {
-        val hadoopStepsOrchestrator = new HadoopStepsOrchestrator(
-          namespace,
-          hadoopConfigMapName,
-          submissionSparkConf,
-          hadoopConfDir)
-        val hadoopConfSteps =
-          hadoopStepsOrchestrator.getHadoopSteps()
-        Some(new HadoopConfigBootstrapStep(hadoopConfSteps, hadoopConfigMapName))
-      }
+      hadoopConfDir.map { conf =>
+        val hadoopStepsOrchestrator =
+          new HadoopStepsOrchestrator(namespace, hadoopConfigMapName, submissionSparkConf, conf)
+        val hadoopConfSteps = hadoopStepsOrchestrator.getHadoopSteps()
+        Some(new HadoopConfigBootstrapStep(hadoopConfSteps, hadoopConfigMapName))}
+      .getOrElse(Option.empty[DriverConfigurationStep])
     val pythonStep = mainAppResource match {
       case PythonMainAppResource(mainPyResource) =>
         Option(new PythonStep(mainPyResource, additionalPythonFiles, filesDownloadPath))

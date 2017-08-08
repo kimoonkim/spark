@@ -98,8 +98,8 @@ package object constants {
 
   // Hadoop Configuration
   private[spark] val HADOOP_FILE_VOLUME = "hadoop-properties"
-  private[spark] val HADOOP_FILE_DIR = "/etc/hadoop"
-  private[spark] val HADOOP_CONF_DIR = "HADOOP_CONF_DIR"
+  private[spark] val HADOOP_CONF_DIR_PATH = "/etc/hadoop/conf"
+  private[spark] val ENV_HADOOP_CONF_DIR = "HADOOP_CONF_DIR"
   private[spark] val HADOOP_CONF_DIR_LOC = "spark.kubernetes.hadoop.conf.dir"
   private[spark] val HADOOP_CONFIG_MAP_SPARK_CONF_NAME =
     "spark.kubernetes.hadoop.executor.hadoopconfigmapname"

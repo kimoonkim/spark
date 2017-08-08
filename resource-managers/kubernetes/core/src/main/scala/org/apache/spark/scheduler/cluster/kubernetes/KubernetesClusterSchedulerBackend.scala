@@ -591,6 +591,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
         )
         (podWithMainContainer.pod, podWithMainContainer.mainContainer)
       }.getOrElse(executorPodWithNodeAffinity, initBootstrappedExecutorContainer)
+
     val (executorKerberosPod, executorKerberosContainer) =
       executorKerberosBootStrap.map { bootstrap =>
         val podWithMainContainer = bootstrap.bootstrapMainContainerAndVolumes(

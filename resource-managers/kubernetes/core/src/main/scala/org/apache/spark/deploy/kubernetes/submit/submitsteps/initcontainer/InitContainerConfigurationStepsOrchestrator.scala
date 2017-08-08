@@ -62,6 +62,7 @@ private[spark] class InitContainerConfigurationStepsOrchestrator(
     submissionSparkConf.get(RESOURCE_STAGING_SERVER_INTERNAL_SSL_ENABLED)
       .orElse(submissionSparkConf.get(RESOURCE_STAGING_SERVER_SSL_ENABLED))
       .getOrElse(false)
+
   OptionRequirements.requireNandDefined(
     maybeResourceStagingServerInternalClientCert,
     maybeResourceStagingServerInternalTrustStore,

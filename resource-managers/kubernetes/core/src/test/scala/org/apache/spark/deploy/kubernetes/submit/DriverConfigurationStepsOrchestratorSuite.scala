@@ -17,7 +17,7 @@
 package org.apache.spark.deploy.kubernetes.submit
 
 import org.apache.spark.{SparkConf, SparkFunSuite}
-import org.apache.spark.deploy.kubernetes.submit.submitsteps.{BaseDriverConfigurationStep, DependencyResolutionStep, DriverKubernetesCredentialsStep, InitContainerBootstrapStep, PythonStep}
+import org.apache.spark.deploy.kubernetes.submit.submitsteps._
 
 private[spark] class DriverConfigurationStepsOrchestratorSuite extends SparkFunSuite {
 
@@ -46,7 +46,7 @@ private[spark] class DriverConfigurationStepsOrchestratorSuite extends SparkFunS
         sparkConf)
     val steps = orchestrator.getAllConfigurationSteps()
     assert(steps.size === 3)
-    assert(steps(0).isInstanceOf[BaseDriverConfigurationStep])
+    assert(steps.head.isInstanceOf[BaseDriverConfigurationStep])
     assert(steps(1).isInstanceOf[DriverKubernetesCredentialsStep])
     assert(steps(2).isInstanceOf[DependencyResolutionStep])
   }
@@ -68,7 +68,7 @@ private[spark] class DriverConfigurationStepsOrchestratorSuite extends SparkFunS
         sparkConf)
     val steps = orchestrator.getAllConfigurationSteps()
     assert(steps.size === 4)
-    assert(steps(0).isInstanceOf[BaseDriverConfigurationStep])
+    assert(steps.head.isInstanceOf[BaseDriverConfigurationStep])
     assert(steps(1).isInstanceOf[DriverKubernetesCredentialsStep])
     assert(steps(2).isInstanceOf[DependencyResolutionStep])
     assert(steps(3).isInstanceOf[InitContainerBootstrapStep])
@@ -78,21 +78,46 @@ private[spark] class DriverConfigurationStepsOrchestratorSuite extends SparkFunS
     val sparkConf = new SparkConf(false)
     val mainAppResource = PythonMainAppResource("local:///var/apps/python/main.py")
     val orchestrator = new DriverConfigurationStepsOrchestrator(
-        NAMESPACE,
-        APP_ID,
-        LAUNCH_TIME,
-        mainAppResource,
-        APP_NAME,
-        MAIN_CLASS,
-        APP_ARGS,
-        ADDITIONAL_PYTHON_FILES,
-        None,
-        sparkConf)
+      NAMESPACE,
+      APP_ID,
+      LAUNCH_TIME,
+      mainAppResource,
+      APP_NAME,
+      MAIN_CLASS,
+      APP_ARGS,
+      ADDITIONAL_PYTHON_FILES,
+      None,
+      sparkConf)
     val steps = orchestrator.getAllConfigurationSteps()
     assert(steps.size === 4)
-    assert(steps(0).isInstanceOf[BaseDriverConfigurationStep])
+    assert(steps.head.isInstanceOf[BaseDriverConfigurationStep])
     assert(steps(1).isInstanceOf[DriverKubernetesCredentialsStep])
     assert(steps(2).isInstanceOf[DependencyResolutionStep])
     assert(steps(3).isInstanceOf[PythonStep])
   }
+
+  test("Submission steps with hdfs interaction and HADOOP_CONF_DIR defined") {
+    val sparkConf = new SparkConf(false)
+    val mainAppResource = JavaMainAppResource("hdfs:///var/apps/jars/main.jar")
+    val hadoopConf = Some("/etc/hadoop/conf")
+    val orchestrator = new DriverConfigurationStepsOrchestrator(
+      NAMESPACE,
+      APP_ID,
+      LAUNCH_TIME,
+      mainAppResource,
+      APP_NAME,
+      MAIN_CLASS,
+      APP_ARGS,
+      ADDITIONAL_PYTHON_FILES,
+      hadoopConf,
+      sparkConf)
+    val steps = orchestrator.getAllConfigurationSteps()
+    assert(steps.size === 5)
+    assert(steps.head.isInstanceOf[BaseDriverConfigurationStep])
+    assert(steps(1).isInstanceOf[DriverKubernetesCredentialsStep])
+    assert(steps(2).isInstanceOf[DependencyResolutionStep])
+    assert(steps(3).isInstanceOf[InitContainerBootstrapStep])
+    assert(steps(4).isInstanceOf[HadoopConfigBootstrapStep])
+  }
+
 }

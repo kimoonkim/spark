@@ -49,9 +49,9 @@ private[spark] class HadoopConfigBootstrapStep(
     val configMap =
       new ConfigMapBuilder()
         .withNewMetadata()
-        .withName(hadoopConfigMapName)
-        .endMetadata()
-          .addToData(currentHadoopSpec.configMapProperties.asJava)
+          .withName(hadoopConfigMapName)
+          .endMetadata()
+        .addToData(currentHadoopSpec.configMapProperties.asJava)
       .build()
     val executorSparkConf = driverSpec.driverSparkConf.clone()
       .set(HADOOP_CONFIG_MAP_SPARK_CONF_NAME, hadoopConfigMapName)

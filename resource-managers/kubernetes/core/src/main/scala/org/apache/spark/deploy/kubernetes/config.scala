@@ -545,7 +545,7 @@ package object config extends Logging {
         " your existing delegation token is stored. This removes the need" +
         " for the job user to provide any keytab for launching a job")
       .stringConf
-      .createWithDefault("spark.kubernetes.kerberos.dt.label")
+      .createOptional
 
   private[spark] def resolveK8sMaster(rawMasterString: String): String = {
     if (!rawMasterString.startsWith("k8s://")) {

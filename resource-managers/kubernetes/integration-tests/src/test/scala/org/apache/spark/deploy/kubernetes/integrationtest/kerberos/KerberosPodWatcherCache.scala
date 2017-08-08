@@ -57,6 +57,7 @@ private[spark] class KerberosPodWatcherCache(
   private var dnSpawned: Boolean = false
   private var dpSpawned: Boolean = false
   private var dnName: String = _
+  private var dpName: String = _
 
   private val blockingThread = new Thread(new Runnable {
     override def run(): Unit = {
@@ -95,6 +96,7 @@ private[spark] class KerberosPodWatcherCache(
                 val phase = resource.getStatus.getPhase
                 logInfo(s"$name is as $phase")
                 if (name.startsWith("dn1")) { dnName = name }
+                if (name.startsWith("data-populator")) { dpName = name }
                 podCache(keyName) = phase
                 if (maybeDeploymentAndServiceDone(keyName)) {
                   val modifyAndSignal: Runnable = new MSThread(keyName)
@@ -142,9 +144,10 @@ private[spark] class KerberosPodWatcherCache(
     serviceWatcherThread.join()
   }
 
-  def stop(): Unit = {
+  def stop(): String = {
     podWatcher.close()
     serviceWatcher.close()
+    dpName
   }
 
   private def maybeDeploymentAndServiceDone(name: String): Boolean = {
@@ -244,7 +247,7 @@ private[spark] class KerberosPodWatcherCache(
     }
   }
 
-  private def hasInLogs(name: String, expectation: String): Boolean = {
+  def hasInLogs(name: String, expectation: String): Boolean = {
     kubernetesClient
       .pods()
       .withName(name)
