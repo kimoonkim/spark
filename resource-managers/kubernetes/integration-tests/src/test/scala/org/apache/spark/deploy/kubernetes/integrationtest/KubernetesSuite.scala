@@ -157,7 +157,6 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
 
   test("Simple submission test with the resource staging server.") {
     assume(testBackend.name == MINIKUBE_TEST_BACKEND)
-    sparkConf.set(KUBERNETES_KERBEROS_SUPPORT, false)
     launchStagingServer(SSLOptions(), None)
     runSparkPiAndVerifyCompletion(SUBMITTER_LOCAL_MAIN_APP_RESOURCE)
   }
@@ -178,7 +177,6 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
       .set("spark.ssl.kubernetes.resourceStagingServer.keyStorePassword", "keyStore")
       .set("spark.ssl.kubernetes.resourceStagingServer.keyPassword", "key")
       .set("spark.ssl.kubernetes.resourceStagingServer.trustStorePassword", "trustStore")
-      .set(KERBEROS_CONF, "simple")
     launchStagingServer(SSLOptions(
       enabled = true,
       keyStore = Some(keyStoreAndTrustStore.keyStore),
@@ -193,7 +191,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
   test("Use container-local resources without the resource staging server") {
     assume(testBackend.name == MINIKUBE_TEST_BACKEND)
 
-    sparkConf.setJars(Seq(CONTAINER_LOCAL_HELPER_JAR_PATH)).set(KUBERNETES_KERBEROS_SUPPORT, false)
+    sparkConf.setJars(Seq(CONTAINER_LOCAL_HELPER_JAR_PATH))
     runSparkPiAndVerifyCompletion(CONTAINER_LOCAL_MAIN_APP_RESOURCE)
   }
 
@@ -209,7 +207,6 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     sparkConf.set("spark.kubernetes.shuffle.labels", "app=spark-shuffle-service")
     sparkConf.set("spark.kubernetes.shuffle.namespace", kubernetesTestComponents.namespace)
     sparkConf.set("spark.app.name", "group-by-test")
-    sparkConf.set(KERBEROS_CONF, "simple")
     runSparkApplicationAndVerifyCompletion(
         JavaMainAppResource(SUBMITTER_LOCAL_MAIN_APP_RESOURCE),
         GROUP_BY_MAIN_CLASS,
@@ -225,7 +222,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     sparkConf.setJars(Seq(
       s"$assetServerUri/${EXAMPLES_JAR_FILE.getName}",
       s"$assetServerUri/${HELPER_JAR_FILE.getName}"
-    )).set(KERBEROS_CONF, "simple")
+    ))
     runSparkPiAndVerifyCompletion(SparkLauncher.NO_RESOURCE)
   }
 
@@ -235,7 +232,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     val assetServerUri = staticAssetServerLauncher.launchStaticAssetServer()
     sparkConf.setJars(Seq(
       SUBMITTER_LOCAL_MAIN_APP_RESOURCE, s"$assetServerUri/${HELPER_JAR_FILE.getName}"
-    )).set(KERBEROS_CONF, "simple")
+    ))
     runSparkPiAndVerifyCompletion(SparkLauncher.NO_RESOURCE)
   }
 
@@ -248,7 +245,6 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     sparkConf.set(RESOURCE_STAGING_SERVER_SSL_ENABLED, true)
         .set(
             RESOURCE_STAGING_SERVER_CLIENT_CERT_PEM.key, keyAndCertificate.certPem.getAbsolutePath)
-      .set(KERBEROS_CONF, "simple")
     runSparkPiAndVerifyCompletion(SUBMITTER_LOCAL_MAIN_APP_RESOURCE)
   }
 
@@ -266,7 +262,6 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     sparkConf.set(
         s"$APISERVER_AUTH_DRIVER_CONF_PREFIX.$CA_CERT_FILE_CONF_SUFFIX",
         kubernetesTestComponents.clientConfig.getCaCertFile)
-    sparkConf.set(KERBEROS_CONF, "simple")
     runSparkPiAndVerifyCompletion(SparkLauncher.NO_RESOURCE)
   }
 
@@ -276,7 +271,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     val testExistenceFile = new File(testExistenceFileTempDir, "input.txt")
     Files.write(TEST_EXISTENCE_FILE_CONTENTS, testExistenceFile, Charsets.UTF_8)
     launchStagingServer(SSLOptions(), None)
-    sparkConf.set("spark.files", testExistenceFile.getAbsolutePath).set(KERBEROS_CONF, "simple")
+    sparkConf.set("spark.files", testExistenceFile.getAbsolutePath)
     runSparkApplicationAndVerifyCompletion(
         JavaMainAppResource(SUBMITTER_LOCAL_MAIN_APP_RESOURCE),
         FILE_EXISTENCE_MAIN_CLASS,
@@ -290,7 +285,6 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     assume(testBackend.name == MINIKUBE_TEST_BACKEND)
 
     sparkConf.setJars(Seq(CONTAINER_LOCAL_HELPER_JAR_PATH)).setAppName("long" * 40)
-      .set(KERBEROS_CONF, "simple")
     runSparkPiAndVerifyCompletion(CONTAINER_LOCAL_MAIN_APP_RESOURCE)
   }
 
@@ -307,7 +301,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     }
     sparkConf.set(RESOURCE_STAGING_SERVER_URI,
       s"$resourceStagingServerUriScheme://" +
-        s"${Minikube.getMinikubeIp}:$resourceStagingServerPort")
+        s"${Minikube.getMinikubeIp}:$resourceStagingServerPort").set(KERBEROS_CONF, "simple")
   }
 
   private def launchKerberizedCluster(): Unit = {
