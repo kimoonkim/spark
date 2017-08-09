@@ -133,6 +133,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
         System.getProperty("spark.docker.test.driverImage", "spark-driver-py:latest"))
       .set(EXECUTOR_DOCKER_IMAGE,
         System.getProperty("spark.docker.test.executorImage", "spark-executor-py:latest"))
+      .set(KUBERNETES_KERBEROS_SUPPORT, false)
 
     runPySparkPiAndVerifyCompletion(
       PYSPARK_PI_SUBMITTER_LOCAL_FILE_LOCATION,
@@ -149,13 +150,14 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
       System.getProperty("spark.docker.test.driverImage", "spark-driver-py:latest"))
       .set(EXECUTOR_DOCKER_IMAGE,
       System.getProperty("spark.docker.test.executorImage", "spark-executor-py:latest"))
+      .set(KUBERNETES_KERBEROS_SUPPORT, false)
 
     runPySparkPiAndVerifyCompletion(PYSPARK_PI_CONTAINER_LOCAL_FILE_LOCATION, Seq.empty[String])
   }
 
   test("Simple submission test with the resource staging server.") {
     assume(testBackend.name == MINIKUBE_TEST_BACKEND)
-
+    sparkConf.set(KUBERNETES_KERBEROS_SUPPORT, false)
     launchStagingServer(SSLOptions(), None)
     runSparkPiAndVerifyCompletion(SUBMITTER_LOCAL_MAIN_APP_RESOURCE)
   }
@@ -176,6 +178,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
       .set("spark.ssl.kubernetes.resourceStagingServer.keyStorePassword", "keyStore")
       .set("spark.ssl.kubernetes.resourceStagingServer.keyPassword", "key")
       .set("spark.ssl.kubernetes.resourceStagingServer.trustStorePassword", "trustStore")
+      .set(KUBERNETES_KERBEROS_SUPPORT, false)
     launchStagingServer(SSLOptions(
       enabled = true,
       keyStore = Some(keyStoreAndTrustStore.keyStore),
@@ -190,7 +193,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
   test("Use container-local resources without the resource staging server") {
     assume(testBackend.name == MINIKUBE_TEST_BACKEND)
 
-    sparkConf.setJars(Seq(CONTAINER_LOCAL_HELPER_JAR_PATH))
+    sparkConf.setJars(Seq(CONTAINER_LOCAL_HELPER_JAR_PATH)).set(KUBERNETES_KERBEROS_SUPPORT, false)
     runSparkPiAndVerifyCompletion(CONTAINER_LOCAL_MAIN_APP_RESOURCE)
   }
 
@@ -206,6 +209,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     sparkConf.set("spark.kubernetes.shuffle.labels", "app=spark-shuffle-service")
     sparkConf.set("spark.kubernetes.shuffle.namespace", kubernetesTestComponents.namespace)
     sparkConf.set("spark.app.name", "group-by-test")
+    sparkConf.set(KUBERNETES_KERBEROS_SUPPORT, false)
     runSparkApplicationAndVerifyCompletion(
         JavaMainAppResource(SUBMITTER_LOCAL_MAIN_APP_RESOURCE),
         GROUP_BY_MAIN_CLASS,
@@ -221,7 +225,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     sparkConf.setJars(Seq(
       s"$assetServerUri/${EXAMPLES_JAR_FILE.getName}",
       s"$assetServerUri/${HELPER_JAR_FILE.getName}"
-    ))
+    )).set(KUBERNETES_KERBEROS_SUPPORT, false)
     runSparkPiAndVerifyCompletion(SparkLauncher.NO_RESOURCE)
   }
 
@@ -231,7 +235,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     val assetServerUri = staticAssetServerLauncher.launchStaticAssetServer()
     sparkConf.setJars(Seq(
       SUBMITTER_LOCAL_MAIN_APP_RESOURCE, s"$assetServerUri/${HELPER_JAR_FILE.getName}"
-    ))
+    )).set(KUBERNETES_KERBEROS_SUPPORT, false)
     runSparkPiAndVerifyCompletion(SparkLauncher.NO_RESOURCE)
   }
 
@@ -244,6 +248,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     sparkConf.set(RESOURCE_STAGING_SERVER_SSL_ENABLED, true)
         .set(
             RESOURCE_STAGING_SERVER_CLIENT_CERT_PEM.key, keyAndCertificate.certPem.getAbsolutePath)
+      .set(KUBERNETES_KERBEROS_SUPPORT, false)
     runSparkPiAndVerifyCompletion(SUBMITTER_LOCAL_MAIN_APP_RESOURCE)
   }
 
@@ -261,6 +266,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     sparkConf.set(
         s"$APISERVER_AUTH_DRIVER_CONF_PREFIX.$CA_CERT_FILE_CONF_SUFFIX",
         kubernetesTestComponents.clientConfig.getCaCertFile)
+    sparkConf.set(KUBERNETES_KERBEROS_SUPPORT, false)
     runSparkPiAndVerifyCompletion(SparkLauncher.NO_RESOURCE)
   }
 
@@ -270,7 +276,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     val testExistenceFile = new File(testExistenceFileTempDir, "input.txt")
     Files.write(TEST_EXISTENCE_FILE_CONTENTS, testExistenceFile, Charsets.UTF_8)
     launchStagingServer(SSLOptions(), None)
-    sparkConf.set("spark.files", testExistenceFile.getAbsolutePath)
+    sparkConf.set("spark.files", testExistenceFile.getAbsolutePath).set(KUBERNETES_KERBEROS_SUPPORT, false)
     runSparkApplicationAndVerifyCompletion(
         JavaMainAppResource(SUBMITTER_LOCAL_MAIN_APP_RESOURCE),
         FILE_EXISTENCE_MAIN_CLASS,
@@ -284,6 +290,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
     assume(testBackend.name == MINIKUBE_TEST_BACKEND)
 
     sparkConf.setJars(Seq(CONTAINER_LOCAL_HELPER_JAR_PATH)).setAppName("long" * 40)
+      .set(KUBERNETES_KERBEROS_SUPPORT, false)
     runSparkPiAndVerifyCompletion(CONTAINER_LOCAL_MAIN_APP_RESOURCE)
   }
 
@@ -423,8 +430,8 @@ private[spark] object KubernetesSuite {
     s"integration-tests-jars/${EXAMPLES_JAR_FILE.getName}"
   val CONTAINER_LOCAL_HELPER_JAR_PATH = s"local:///opt/spark/examples/" +
     s"integration-tests-jars/${HELPER_JAR_FILE.getName}"
-  val TIMEOUT = PatienceConfiguration.Timeout(Span(15, Minutes))
-  val INTERVAL = PatienceConfiguration.Interval(Span(15, Seconds))
+  val TIMEOUT = PatienceConfiguration.Timeout(Span(10, Minutes))
+  val INTERVAL = PatienceConfiguration.Interval(Span(10, Seconds))
   val SPARK_PI_MAIN_CLASS = "org.apache.spark.deploy.kubernetes" +
     ".integrationtest.jobs.SparkPiWithInfiniteWait"
   val PYSPARK_PI_MAIN_CLASS = "org.apache.spark.deploy.PythonRunner"
