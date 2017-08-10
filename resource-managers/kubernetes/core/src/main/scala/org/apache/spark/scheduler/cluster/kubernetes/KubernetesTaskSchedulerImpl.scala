@@ -16,6 +16,7 @@
  */
 package org.apache.spark.scheduler.cluster.kubernetes
 
+import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.scheduler.{SchedulerBackend, TaskSchedulerImpl, TaskSet, TaskSetManager}
 import org.apache.spark.util.Utils
 import org.apache.spark.SparkContext
@@ -59,8 +60,12 @@ private[spark] class KubernetesTaskSchedulerImpl(
             val clusterNodeIP = pod.getStatus.getHostIP
             val rackByNodeIP = rackResolverUtil.resolveRack(hadoopConfiguration, clusterNodeIP)
             rackByNodeIP.orElse({
-              val clusterNodeFullName = inetAddressUtil.getFullHostName(clusterNodeIP)
-              rackResolverUtil.resolveRack(hadoopConfiguration, clusterNodeFullName)
+              if (conf.get(KUBERNETES_DRIVER_CLUSTER_NODENAME_DNS_LOOKUP_ENABLED)) {
+                val clusterNodeFullName = inetAddressUtil.getFullHostName(clusterNodeIP)
+                rackResolverUtil.resolveRack(hadoopConfiguration, clusterNodeFullName)
+              } else {
+                Option.empty
+              }
             })
           })
         }
