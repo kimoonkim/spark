@@ -16,6 +16,8 @@
  */
 package org.apache.spark.deploy.kubernetes.submit.submitsteps.hadoopsteps
 
+import org.apache.hadoop.security.UserGroupInformation
+
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.{KerberosTokenConfBootstrapImpl, PodWithMainContainer}
 import org.apache.spark.deploy.kubernetes.constants._
@@ -34,7 +36,8 @@ private[spark] class HadoopKerberosSecretResolverStep(
   override def configureContainers(hadoopConfigSpec: HadoopConfigSpec): HadoopConfigSpec = {
     val bootstrapKerberos = new KerberosTokenConfBootstrapImpl(
       tokenSecretName,
-      tokenLabelName)
+      tokenLabelName,
+      UserGroupInformation.getCurrentUser.getShortUserName)
     val withKerberosEnvPod = bootstrapKerberos.bootstrapMainContainerAndVolumes(
       PodWithMainContainer(
         hadoopConfigSpec.driverPod,

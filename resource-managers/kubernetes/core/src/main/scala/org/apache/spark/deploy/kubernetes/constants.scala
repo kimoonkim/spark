@@ -75,6 +75,7 @@ package object constants {
   private[spark] val ENV_PYSPARK_FILES = "PYSPARK_FILES"
   private[spark] val ENV_PYSPARK_PRIMARY = "PYSPARK_PRIMARY"
   private[spark] val ENV_HADOOP_TOKEN_FILE_LOCATION = "HADOOP_TOKEN_FILE_LOCATION"
+  private[spark] val ENV_SPARK_USER = "SPARK_USER"
 
   // Bootstrapping dependencies with the init-container
   private[spark] val INIT_CONTAINER_ANNOTATION = "pod.beta.kubernetes.io/init-containers"

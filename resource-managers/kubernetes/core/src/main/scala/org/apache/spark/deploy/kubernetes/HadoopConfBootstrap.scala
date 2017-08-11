@@ -19,9 +19,8 @@ package org.apache.spark.deploy.kubernetes
 import java.io.File
 
 import scala.collection.JavaConverters._
-
 import io.fabric8.kubernetes.api.model.{ContainerBuilder, KeyToPathBuilder, PodBuilder}
-
+import org.apache.hadoop.security.UserGroupInformation
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.internal.Logging
 
@@ -73,6 +72,10 @@ private[spark] class HadoopConfBootstrapImpl(
       .addNewEnv()
         .withName(HADOOP_CONF_DIR)
         .withValue(HADOOP_FILE_DIR)
+        .endEnv()
+      .addNewEnv()
+        .withName(ENV_SPARK_USER)
+        .withValue(UserGroupInformation.getCurrentUser.getShortUserName)
         .endEnv()
       .build()
     originalPodWithMainContainer.copy(

@@ -17,6 +17,7 @@
 package org.apache.spark.deploy.kubernetes
 
 import io.fabric8.kubernetes.api.model.{ContainerBuilder, PodBuilder}
+import org.apache.hadoop.security.UserGroupInformation
 
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.internal.Logging
@@ -36,7 +37,8 @@ private[spark] trait KerberosTokenBootstrapConf {
 
 private[spark] class KerberosTokenConfBootstrapImpl(
   secretName: String,
-  secretLabel: String) extends KerberosTokenBootstrapConf with Logging{
+  secretLabel: String,
+  userName: String) extends KerberosTokenBootstrapConf with Logging{
 
   override def bootstrapMainContainerAndVolumes(
   originalPodWithMainContainer: PodWithMainContainer)
@@ -61,6 +63,10 @@ private[spark] class KerberosTokenConfBootstrapImpl(
       .addNewEnv()
         .withName(ENV_HADOOP_TOKEN_FILE_LOCATION)
         .withValue(s"$SPARK_APP_HADOOP_CREDENTIALS_BASE_DIR/$secretLabel")
+        .endEnv()
+      .addNewEnv()
+        .withName(ENV_SPARK_USER)
+        .withValue(userName)
         .endEnv()
       .build()
     originalPodWithMainContainer.copy(
