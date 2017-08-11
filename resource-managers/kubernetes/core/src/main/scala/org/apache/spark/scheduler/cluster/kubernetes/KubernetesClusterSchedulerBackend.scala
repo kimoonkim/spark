@@ -72,6 +72,8 @@ private[spark] class KubernetesClusterSchedulerBackend(
   private val executorsToRemove = Collections.newSetFromMap[String](
     new ConcurrentHashMap[String, java.lang.Boolean]()).asScala
 
+  private val executorExtraJavaOpts = conf.get(
+    org.apache.spark.internal.config.EXECUTOR_JAVA_OPTIONS)
   private val executorExtraClasspath = conf.get(
     org.apache.spark.internal.config.EXECUTOR_CLASS_PATH)
   private val executorJarsDownloadDir = conf.get(INIT_CONTAINER_JARS_DOWNLOAD_LOCATION)
@@ -451,6 +453,12 @@ private[spark] class KubernetesClusterSchedulerBackend(
     val executorCpuQuantity = new QuantityBuilder(false)
       .withAmount(executorCores.toString)
       .build()
+    val executorJavaOptsEnv = executorExtraJavaOpts.map { opts =>
+      new EnvVarBuilder()
+        .withName(ENV_EXECUTOR_JAVA_OPTS)
+        .withValue(opts)
+        .build()
+    }
     val executorExtraClasspathEnv = executorExtraClasspath.map { cp =>
       new EnvVarBuilder()
         .withName(ENV_EXECUTOR_EXTRA_CLASSPATH)
@@ -499,6 +507,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
       .endResources()
       .addAllToEnv(requiredEnv.asJava)
       .addToEnv(executorExtraClasspathEnv.toSeq: _*)
+      .addToEnv(executorJavaOptsEnv.toSeq: _*)
       .withPorts(requiredPorts.asJava)
       .build()
 
