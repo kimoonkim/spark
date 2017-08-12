@@ -115,6 +115,9 @@ package object constants {
     "spark.kubernetes.kerberos.labelname"
   private[spark] val KERBEROS_SECRET_LABEL_PREFIX =
     "hadoop-tokens"
+  private[spark] val SPARK_HADOOP_PREFIX = "spark.hadoop."
+  private[spark] val HADOOP_SECURITY_AUTHENTICATION =
+    SPARK_HADOOP_PREFIX + "hadoop.security.authentication"
 
   // Miscellaneous
   private[spark] val ANNOTATION_EXECUTOR_NODE_AFFINITY = "scheduler.alpha.kubernetes.io/affinity"
