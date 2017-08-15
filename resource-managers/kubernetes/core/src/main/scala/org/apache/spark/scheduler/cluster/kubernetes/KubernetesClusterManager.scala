@@ -25,6 +25,7 @@ import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend, TaskScheduler, TaskSchedulerImpl}
+import org.apache.spark.util.Utils
 
 private[spark] class KubernetesClusterManager extends ExternalClusterManager with Logging {
   import org.apache.spark.SparkContext
@@ -91,7 +92,8 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager wit
     } yield {
       new KerberosTokenConfBootstrapImpl(
         secretName,
-        secretLabel)
+        secretLabel,
+        Utils.getCurrentUserName)
     }
     if (maybeConfigMap.isEmpty) {
       logWarning("The executor's init-container config map was not specified. Executors will" +

@@ -112,7 +112,8 @@ private[spark] class HadoopKerberosKeytabResolverStep(
       .build()
     val bootstrapKerberos = new KerberosTokenConfBootstrapImpl(
       HADOOP_KERBEROS_SECRET_NAME,
-      initialTokenLabelName)
+      initialTokenLabelName,
+      jobUserUGI.getShortUserName)
     val withKerberosEnvPod = bootstrapKerberos.bootstrapMainContainerAndVolumes(
       PodWithMainContainer(
         hadoopConfigSpec.driverPod,

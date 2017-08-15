@@ -15,6 +15,7 @@ until /usr/bin/kinit -kt /var/keytabs/hdfs.keytab hdfs/nn.${NAMESPACE}.svc.clust
       --kubernetes-namespace ${NAMESPACE} \
       --conf spark.executor.instances=1 \
       --conf spark.app.name=spark-hdfs \
+      --conf spark.driver.extraClassPath=/opt/spark/hconf/core-site.xml:/opt/spark/hconf/hdfs-site.xml:/opt/spark/hconf/yarn-site.xml:/etc/krb5.conf \
       --conf spark.kubernetes.driver.docker.image=spark-driver:latest \
       --conf spark.kubernetes.executor.docker.image=spark-executor:latest \
       --conf spark.kubernetes.initcontainer.docker.image=spark-init:latest \

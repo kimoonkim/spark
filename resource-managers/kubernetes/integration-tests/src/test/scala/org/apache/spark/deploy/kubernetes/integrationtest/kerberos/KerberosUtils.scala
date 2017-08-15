@@ -41,7 +41,7 @@ private[spark] class KerberosUtils(
   private val regex = "REPLACE_ME".r
   private val regexDP = "# default_ccache_name = MEMORY".r
   private val defaultCacheDP = "default_ccache_name = KRBCONF"
-  private def locationResolver(loc: String) = s"src/test/resources/$loc"
+  private def locationResolver(loc: String) = s"test-data/hadoop-conf/$loc"
   private val kerberosFiles = Seq("krb5.conf", "core-site.xml", "hdfs-site.xml")
   private val kerberosConfTupList =
     kerberosFiles.map { file =>

@@ -92,7 +92,7 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
       Seq("HADOOP_CONF_DIR defined. Mounting HDFS specific .xml files", "Pi is roughly 3"),
       Array("5"),
       Seq.empty[String],
-      Some("src/test/resources"))
+      Some("test-data/simple-hadoop-conf"))
   }
 
   test("Secure HDFS test with HDFS keytab") {

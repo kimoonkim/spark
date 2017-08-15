@@ -21,6 +21,7 @@ import java.io.File
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.{HadoopConfBootstrapImpl, OptionRequirements}
 import org.apache.spark.deploy.kubernetes.config._
+import org.apache.spark.internal.Logging
 
 
  /**
@@ -30,15 +31,16 @@ private[spark] class HadoopStepsOrchestrator(
   namespace: String,
   hadoopConfigMapName: String,
   submissionSparkConf: SparkConf,
-  hadoopConfDir: String) {
-  private val isKerberosEnabled = submissionSparkConf.get(KUBERNETES_KERBEROS_SUPPORT)
-  private val maybePrincipal = submissionSparkConf.get(KUBERNETES_KERBEROS_PRINCIPAL)
-  private val maybeKeytab = submissionSparkConf.get(KUBERNETES_KERBEROS_KEYTAB)
-    .map(k => new File(k))
-  private val maybeExistingSecret = submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_NAME)
-  private val maybeExistingSecretLabel =
-    submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_LABEL)
-  private val hadoopConfigurationFiles = getHadoopConfFiles(hadoopConfDir)
+  hadoopConfDir: String) extends Logging{
+   private val isKerberosEnabled = submissionSparkConf.get(KUBERNETES_KERBEROS_SUPPORT)
+   private val maybePrincipal = submissionSparkConf.get(KUBERNETES_KERBEROS_PRINCIPAL)
+   private val maybeKeytab = submissionSparkConf.get(KUBERNETES_KERBEROS_KEYTAB)
+     .map(k => new File(k))
+   private val maybeExistingSecret = submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_NAME)
+   private val maybeExistingSecretLabel =
+     submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_LABEL)
+   private val hadoopConfigurationFiles = getHadoopConfFiles(hadoopConfDir)
+   logInfo(s"Hadoop Conf directory: $hadoopConfDir")
 
    require(maybeKeytab.forall( _ => isKerberosEnabled ),
      "You must enable Kerberos support if you are specifying a Kerberos Keytab")

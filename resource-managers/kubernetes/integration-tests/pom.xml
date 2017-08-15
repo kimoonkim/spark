@@ -268,7 +268,7 @@
               <outputDirectory>${project.build.directory}/docker/hconf</outputDirectory>
               <resources>
                 <resource>
-                  <directory>src/test/resources</directory>
+                  <directory>test-data/hadoop-conf</directory>
                 </resource>
               </resources>
             </configuration>
