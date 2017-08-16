@@ -38,35 +38,49 @@ private[spark] class HadoopStepsOrchestratorSuite extends SparkFunSuite {
     assert(true)
   }
 
-//  test("Testing with Keytab Kerberos Login") {
-//    val sparkTestConf2 = new SparkConf(true)
-//      .set(KUBERNETES_KERBEROS_SUPPORT, true)
-//      .set(KUBERNETES_KERBEROS_KEYTAB, "keytab.file")
-//      .set(KUBERNETES_KERBEROS_PRINCIPAL, "user@kerberos")
-//    val hadoopOrchestrator = new HadoopStepsOrchestrator(
-//      NAMESPACE,
-//      HADOOP_CONFIG_MAP,
-//      sparkTestConf2,
-//      HADOOP_CONF_DIR_VAL)
-//    val steps = hadoopOrchestrator.getHadoopSteps()
-//    assert(steps.length === 2)
-//    assert(steps.head.isInstanceOf[HadoopConfMounterStep])
-//    assert(steps(1).isInstanceOf[HadoopKerberosKeytabResolverStep])
-//  }
+  test("Testing with Keytab Kerberos Login") {
+    val sparkTestConf = new SparkConf(true)
+      .set(KUBERNETES_KERBEROS_SUPPORT, true)
+      .set(KUBERNETES_KERBEROS_KEYTAB, "keytab.file")
+      .set(KUBERNETES_KERBEROS_PRINCIPAL, "user@kerberos")
+    val hadoopOrchestrator = new HadoopStepsOrchestrator(
+      NAMESPACE,
+      HADOOP_CONFIG_MAP,
+      sparkTestConf,
+      HADOOP_CONF_DIR_VAL)
+    val steps = hadoopOrchestrator.getHadoopSteps()
+    assert(steps.length === 2)
+    assert(steps.head.isInstanceOf[HadoopConfMounterStep])
+    assert(steps(1).isInstanceOf[HadoopKerberosKeytabResolverStep])
+  }
 
-//  test("Testing with Keytab Kerberos Login") {
-//    val sparkTestConf3 = new SparkConf(true)
-//      .set(KUBERNETES_KERBEROS_SUPPORT, true)
-//      .set(KUBERNETES_KERBEROS_DT_SECRET_NAME, "dtSecret")
-//      .set(KUBERNETES_KERBEROS_DT_SECRET_LABEL, "dtLabel")
-//    val hadoopOrchestrator = new HadoopStepsOrchestrator(
-//      NAMESPACE,
-//      HADOOP_CONFIG_MAP,
-//      sparkTestConf3,
-//      HADOOP_CONF_DIR_VAL)
-//    val steps = hadoopOrchestrator.getHadoopSteps()
-//    assert(steps.length === 2)
-//    assert(steps.head.isInstanceOf[HadoopConfMounterStep])
-//    assert(steps(1).isInstanceOf[HadoopKerberosSecretResolverStep])
-//  }
+  test("Testing with kinit Kerberos Login") {
+    val sparkTestConf = new SparkConf(true)
+      .set(KUBERNETES_KERBEROS_SUPPORT, true)
+    val hadoopOrchestrator = new HadoopStepsOrchestrator(
+      NAMESPACE,
+      HADOOP_CONFIG_MAP,
+      sparkTestConf,
+      HADOOP_CONF_DIR_VAL)
+    val steps = hadoopOrchestrator.getHadoopSteps()
+    assert(steps.length === 2)
+    assert(steps.head.isInstanceOf[HadoopConfMounterStep])
+    assert(steps(1).isInstanceOf[HadoopKerberosKeytabResolverStep])
+  }
+
+  test("Testing with Secret stored Kerberos") {
+    val sparkTestConf = new SparkConf(true)
+      .set(KUBERNETES_KERBEROS_SUPPORT, true)
+      .set(KUBERNETES_KERBEROS_DT_SECRET_NAME, "dtSecret")
+      .set(KUBERNETES_KERBEROS_DT_SECRET_LABEL, "dtLabel")
+    val hadoopOrchestrator = new HadoopStepsOrchestrator(
+      NAMESPACE,
+      HADOOP_CONFIG_MAP,
+      sparkTestConf,
+      HADOOP_CONF_DIR_VAL)
+    val steps = hadoopOrchestrator.getHadoopSteps()
+    assert(steps.length === 2)
+    assert(steps.head.isInstanceOf[HadoopConfMounterStep])
+    assert(steps(1).isInstanceOf[HadoopKerberosSecretResolverStep])
+  }
 }
