@@ -41,7 +41,7 @@ import org.apache.spark.internal.Logging
   * assumes that the job user has either specified a principal and keytab or ran
   * $kinit before running spark-submit. With a TGT stored locally, by running
   * UGI.getCurrentUser you are able to obtain the current user, alternatively
-  * you can run UGI.logingUserFromKeytabAndReturnUGI and by running .doAs run
+  * you can run UGI.loginUserFromKeytabAndReturnUGI and by running .doAs run
   * as the logged into user instead of the current user. With the Job User principal
   * you then retrieve the delegation token from the NameNode and store values in
   * DelegationToken. Lastly, the class puts the data into a secret. All this is

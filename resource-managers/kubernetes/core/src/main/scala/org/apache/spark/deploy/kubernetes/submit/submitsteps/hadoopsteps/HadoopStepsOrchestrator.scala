@@ -23,7 +23,6 @@ import org.apache.spark.deploy.kubernetes.{HadoopConfBootstrapImpl, OptionRequir
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.internal.Logging
 
-
  /**
   * Returns the complete ordered list of steps required to configure the hadoop configurations.
   */

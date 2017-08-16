@@ -17,22 +17,22 @@
 package org.apache.spark.deploy.kubernetes.submit
 
 import com.google.common.collect.Iterables
-import io.fabric8.kubernetes.api.model.{ContainerBuilder, DoneablePod, HasMetadata, Pod, PodBuilder, PodList, Secret, SecretBuilder}
+import io.fabric8.kubernetes.api.model._
+import io.fabric8.kubernetes.client.dsl.{MixedOperation, NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable, PodResource}
 import io.fabric8.kubernetes.client.{KubernetesClient, Watch}
-import io.fabric8.kubernetes.client.dsl.{MixedOperation, NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable, NamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicable, PodResource, Resource}
-import org.mockito.{ArgumentCaptor, Mock, MockitoAnnotations}
+import org.apache.spark.deploy.kubernetes.constants._
+import org.apache.spark.deploy.kubernetes.submit.submitsteps.{DriverConfigurationStep, KubernetesDriverSpec}
+import org.apache.spark.{SparkConf, SparkFunSuite}
 import org.mockito.Mockito.{doReturn, verify, when}
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
+import org.mockito.{ArgumentCaptor, Mock, MockitoAnnotations}
 import org.scalatest.BeforeAndAfter
 import org.scalatest.mock.MockitoSugar._
+
 import scala.collection.JavaConverters._
 
-import org.apache.spark.{SparkConf, SparkFunSuite}
-import org.apache.spark.deploy.kubernetes.constants._
-import org.apache.spark.deploy.kubernetes.submit.submitsteps.{DriverConfigurationStep, KubernetesDriverSpec}
-
-class ClientSuite extends SparkFunSuite with BeforeAndAfter {
+private[spark] class ClientSuite extends SparkFunSuite with BeforeAndAfter {
 
   private val DRIVER_POD_UID = "pod-id"
   private val DRIVER_POD_API_VERSION = "v1"

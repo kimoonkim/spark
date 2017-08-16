@@ -22,7 +22,7 @@ import scala.collection.JavaConverters._
 
 import org.apache.spark.{SparkConf, SparkFunSuite}
 
-class PythonStepSuite extends SparkFunSuite with BeforeAndAfter {
+private[spark] class PythonStepSuite extends SparkFunSuite with BeforeAndAfter {
   private val FILE_DOWNLOAD_PATH = "/var/data/spark-files"
   private val PYSPARK_FILES = Seq(
     "hdfs://localhost:9000/app/files/file1.py",

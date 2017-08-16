@@ -512,7 +512,7 @@ package object config extends Logging {
   private[spark] val KUBERNETES_NODE_SELECTOR_PREFIX = "spark.kubernetes.node.selector."
 
   private[spark] val KUBERNETES_KERBEROS_SUPPORT =
-    ConfigBuilder("spark.kubernetes.kerberos")
+    ConfigBuilder("spark.kubernetes.kerberos.enabled")
       .doc("Specify whether your job is a job that will require a Delegation Token to access HDFS")
       .booleanConf
       .createWithDefault(false)

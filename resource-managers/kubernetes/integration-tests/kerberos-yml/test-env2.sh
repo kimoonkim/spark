@@ -20,8 +20,6 @@ until /usr/bin/kinit -kt /var/keytabs/hdfs.keytab hdfs/nn.${NAMESPACE}.svc.clust
       --conf spark.kubernetes.executor.docker.image=spark-executor:latest \
       --conf spark.kubernetes.initcontainer.docker.image=spark-init:latest \
       --conf spark.kubernetes.kerberos.enabled=true \
-      --conf spark.kubernetes.kerberos.keytab=/var/keytabs/hdfs.keytab \
-      --conf spark.kubernetes.kerberos.principal=hdfs/nn.${NAMESPACE}.svc.cluster.local@CLUSTER.LOCAL \
       --conf spark.kubernetes.driver.label.spark-app-locator=${APP_LOCATOR_LABEL} \
       ${SUBMIT_RESOURCE} \
       hdfs://nn.${NAMESPACE}.svc.cluster.local:9000/user/ifilonenko/wordcount.txt

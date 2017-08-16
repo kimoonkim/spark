@@ -24,4 +24,5 @@ FROM spark-base
 RUN apk add --no-cache --update krb5 krb5-libs
 COPY examples /opt/spark/examples
 COPY test-scripts/test-env.sh /opt/spark/
+COPY test-scripts/test-env2.sh /opt/spark/
 COPY hconf /opt/spark/hconf

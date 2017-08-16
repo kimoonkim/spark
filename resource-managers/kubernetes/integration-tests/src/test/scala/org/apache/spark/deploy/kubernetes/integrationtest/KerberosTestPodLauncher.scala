@@ -35,7 +35,6 @@ import org.apache.spark.deploy.kubernetes.submit.ContainerNameEqualityPredicate
 private[spark] class KerberosTestPodLauncher(
   kubernetesClient: KubernetesClient,
   namespace: String) {
-   private val yamlLocation = "kerberos-yml/kerberos-test.yml"
    private val kerberosFiles = Seq("krb5.conf", "core-site.xml", "hdfs-site.xml")
    private val KRB_VOLUME = "krb5-conf"
    private val KRB_FILE_DIR = "/tmp"
@@ -46,7 +45,11 @@ private[spark] class KerberosTestPodLauncher(
        .withKey(file)
        .withPath(file)
        .build()).toList
-   def startKerberosTest(resource: String, className: String, appLabel: String): Unit = {
+   def startKerberosTest(
+     resource: String,
+     className: String,
+     appLabel: String,
+     yamlLocation: String): Unit = {
      kubernetesClient.load(new FileInputStream(new File(yamlLocation)))
        .get().get(0) match {
        case deployment: Deployment =>
