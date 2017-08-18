@@ -128,39 +128,6 @@ private[spark] class KubernetesSuite extends SparkFunSuite with BeforeAndAfter {
       }
     }
   }
-//  test("Secure HDFS test with kinit") {
-//    assume(testBackend.name == MINIKUBE_TEST_BACKEND)
-//    launchKerberizedCluster()
-//    createKerberosTestPod(
-//      CONTAINER_LOCAL_MAIN_APP_RESOURCE,
-//      HDFS_TEST_CLASS,
-//      APP_LOCATOR_LABEL,
-//      "kerberos-yml/kerberos-test2.yml")
-//    val kubernetesClient = kubernetesTestComponents.kubernetesClient
-//    val driverWatcherCache = new KerberosDriverWatcherCache(
-//      kubernetesClient,
-//      Map("spark-app-locator" -> APP_LOCATOR_LABEL))
-//    driverWatcherCache.start()
-//    driverWatcherCache.stop()
-//    val expectedLogOnCompletion = Seq(
-//      "Returned length(s) of: 1",
-//      "File contents: [This is an awesome word count file]")
-//    val driverPod = kubernetesClient
-//      .pods()
-//      .withLabel("spark-app-locator", APP_LOCATOR_LABEL)
-//      .list()
-//      .getItems
-//      .get(0)
-//    Eventually.eventually(TIMEOUT, INTERVAL) {
-//      expectedLogOnCompletion.foreach { e =>
-//        assert(kubernetesClient
-//          .pods()
-//          .withName(driverPod.getMetadata.getName)
-//          .getLog
-//          .contains(e), "The application did not complete.")
-//      }
-//    }
-//  }
 
   test("Run PySpark Job on file from SUBMITTER with --py-files") {
     assume(testBackend.name == MINIKUBE_TEST_BACKEND)

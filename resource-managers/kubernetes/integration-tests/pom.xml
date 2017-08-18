@@ -253,7 +253,6 @@
                   <directory>kerberos-yml</directory>
                   <includes>
                     <include>test-env.sh</include>
-                    <include>test-env2.sh</include>
                   </includes>
                 </resource>
               </resources>

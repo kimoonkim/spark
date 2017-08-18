@@ -16,16 +16,13 @@
  */
 package org.apache.spark.deploy.kubernetes.submit
 
-import java.io.File
-import java.util.UUID
-
 import scala.collection.JavaConverters._
-import com.google.common.io.Files
+
 import io.fabric8.kubernetes.api.model._
+
 import org.apache.spark.SparkFunSuite
-import org.apache.spark.deploy.kubernetes.{HadoopConfBootstrapImpl, KerberosTokenConfBootstrapImpl, PodWithMainContainer}
+import org.apache.spark.deploy.kubernetes.{KerberosTokenConfBootstrapImpl, PodWithMainContainer}
 import org.apache.spark.deploy.kubernetes.constants._
-import org.apache.spark.util.Utils
 
 
 private[spark] class KerberosTokenConfBootstrapSuite extends SparkFunSuite {

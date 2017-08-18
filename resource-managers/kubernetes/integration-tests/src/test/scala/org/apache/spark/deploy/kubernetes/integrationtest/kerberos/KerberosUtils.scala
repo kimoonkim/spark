@@ -58,19 +58,35 @@ private[spark] class KerberosUtils(
       .withKey(file)
       .withPath(file)
       .build()).toList
-  private val pvNN = Seq("namenode-hadoop", "namenode-hadoop-pv")
-  private val pvKT = Seq("server-keytab", "server-keytab-pv")
-  private def buildKerberosPV(seqPair: Seq[String]) = {
+  private def createPVTemplate(name: String, pathType: String) : PersistentVolume =
+    new PersistentVolumeBuilder()
+      .withNewMetadata()
+        .withName(name)
+        .withLabels(Map(
+          "type" -> "local",
+          "job" -> "kerberostest").asJava)
+        .endMetadata()
+      .withNewSpec()
+        .withCapacity(Map("storage" -> new Quantity("1Gi")).asJava)
+        .withAccessModes("ReadWriteOnce")
+        .withHostPath(
+          new HostPathVolumeSource(s"/tmp/$namespace/$pathType"))
+        .endSpec()
+      .build()
+   private val pvNN = "nn-hadoop"
+   private val pvKT = "server-keytab"
+   private val persistentVolumeMap: Map[String, PersistentVolume] = Map(
+     pvNN -> createPVTemplate(pvNN, "nn"),
+     pvKT -> createPVTemplate(pvKT, "keytab"))
+  private def buildKerberosPV(pvType: String) = {
     KerberosStorage(
-      kubernetesClient.load(loadFromYaml(seqPair.head))
+      kubernetesClient.load(loadFromYaml(pvType))
         .get().get(0).asInstanceOf[PersistentVolumeClaim],
-      kubernetesClient.load(loadFromYaml(seqPair(1)))
-        .get().get(0).asInstanceOf[PersistentVolume])
+      persistentVolumeMap(pvType))
   }
   def getNNStorage: KerberosStorage = buildKerberosPV(pvNN)
   def getKTStorage: KerberosStorage = buildKerberosPV(pvKT)
   def getLabels: Map[String, String] = PV_LABELS
-  def getPVNN: Seq[String] = pvNN
   def getKeyPaths: Seq[KeyToPath] = keyPaths
   def getConfigMap: ConfigMap = new ConfigMapBuilder()
     .withNewMetadata()
