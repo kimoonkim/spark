@@ -18,14 +18,19 @@ package org.apache.spark.security.kubernetes
 
 package object constants {
 
+  val REFRESH_SERVER_KERBEROS_PRINCIPAL = "kimoonkim"
+  val REFRESH_SERVER_KERBEROS_KEYTAB_PATH = "/etc/security/krb5.keytab"
+
   val HADOOP_DELEGATION_TOKEN_LABEL_IN_SECRET = "hadoop.delegation.token"
   val HADOOP_TOKEN_KEY_IN_SECRET_DATA = "hadoop-token"
 
-  val TOKEN_RENEW_NUM_THREADS = 10
-  val TOKEN_RENEW_THREAD_NAME = "token-renewer"
-  val TOKEN_RENEW_TASK_INITIAL_DELAY_MILLIS = 0L
-  val TOKEN_RENEW_SCHEDULE_AHEAD_MILLIS = 10000L
+  val REFERSH_TASKS_NUM_THREADS = 10
+  val REFRESH_TASK_THREAD_NAME = "token-renewer"
+  val REFRESH_STARTER_TASK_INITIAL_DELAY_MILLIS = 0L
+  val RENEW_TASK_SCHEDULE_AHEAD_MILLIS = 10000L
 
-  val SECRET_FIND_THREAD_NAME = "secret-finder"
+  val SECRET_SCANNER_THREAD_NAME = "secret-scanner"
+  val SECRET_SCANNER_INITIAL_DELAY_MILLIS = 10 * 1000L
+  val SECRET_SCANNER_PERIOD_MILLIS = 60 * 60 * 1000L
   val IS_DAEMON_THREAD = true
 }

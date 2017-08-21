@@ -21,12 +21,14 @@ import java.util.concurrent.{Executors, ScheduledFuture, ThreadFactory, TimeUnit
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import io.fabric8.kubernetes.api.model.Secret
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.security.Credentials
+import org.apache.hadoop.security.{Credentials, UserGroupInformation}
 import org.apache.hadoop.security.token.{Token, TokenIdentifier}
+
 import org.apache.spark.security.kubernetes.constants._
 
 private class TokenRefreshService extends Actor {
@@ -45,10 +47,10 @@ private class TokenRefreshService extends Actor {
     case _ =>
   }
 
-  private def newScheduler() = Executors.newScheduledThreadPool(TOKEN_RENEW_NUM_THREADS,
+  private def newScheduler() = Executors.newScheduledThreadPool(REFERSH_TASKS_NUM_THREADS,
     new ThreadFactory {
       override def newThread(r: Runnable): Thread = {
-        val thread = new Thread(r, TOKEN_RENEW_THREAD_NAME)
+        val thread = new Thread(r, REFRESH_TASK_THREAD_NAME)
         thread.setDaemon(true)
         thread
       }
@@ -57,7 +59,7 @@ private class TokenRefreshService extends Actor {
   private def addStarterTask(secret: Secret) = {
     taskHandleBySecret.getOrElseUpdate(getSecretUid(secret), {
       val task = new StarterTask(secret, hadoopConf, self)
-      scheduler.schedule(task, TOKEN_RENEW_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS)
+      scheduler.schedule(task, REFRESH_STARTER_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS)
     })
   }
 
@@ -80,7 +82,7 @@ private class TokenRefreshService extends Actor {
     val uid = getSecretUid(renew.secret)
     if (taskHandleBySecret.get(uid).nonEmpty) {
       val renewTime = math.min(0L,
-        renew.expireTime - TOKEN_RENEW_SCHEDULE_AHEAD_MILLIS - clock.nowInMillis())
+        renew.expireTime - RENEW_TASK_SCHEDULE_AHEAD_MILLIS - clock.nowInMillis())
       val task = new RenewTask(renew, hadoopConf, self)
       taskHandleBySecret.put(uid, scheduler.schedule(task, renewTime, TimeUnit.MILLISECONDS))
     }
@@ -127,7 +129,7 @@ private class RenewTask(renew: Renew, hadoopConf: Configuration, refreshService:
   extends Runnable {
 
   override def run() : Unit = {
-    val deadline = renew.expireTime + TOKEN_RENEW_SCHEDULE_AHEAD_MILLIS
+    val deadline = renew.expireTime + RENEW_TASK_SCHEDULE_AHEAD_MILLIS
     val newExpireTimeByToken : Map[Token[_ <: TokenIdentifier], Long] =
       renew.expireTimeByToken.map {
         item =>
@@ -160,5 +162,10 @@ private case class StopRefresh(secret: Secret)
 
 private object TokenRefreshService {
 
-  def apply(system: ActorSystem) : ActorRef = system.actorOf(Props[TokenRefreshService])
+  def apply(system: ActorSystem) : ActorRef = {
+    UserGroupInformation.loginUserFromKeytab(
+      REFRESH_SERVER_KERBEROS_PRINCIPAL,
+      REFRESH_SERVER_KERBEROS_KEYTAB_PATH)
+    system.actorOf(Props[TokenRefreshService])
+  }
 }

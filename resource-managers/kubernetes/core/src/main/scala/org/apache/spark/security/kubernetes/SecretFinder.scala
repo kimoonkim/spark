@@ -31,7 +31,8 @@ private class SecretFinder(renewService: ActorRef,
                            timer: Timer,
                            kubernetesClient: KubernetesClient) {
 
-  timer.schedule(new SecretScanner(renewService, kubernetesClient), 1000L, 1000L)
+  timer.schedule(new SecretScanner(renewService, kubernetesClient),
+    SECRET_SCANNER_INITIAL_DELAY_MILLIS, SECRET_SCANNER_PERIOD_MILLIS)
   kubernetesClient
     .secrets()
     .withLabel(HADOOP_DELEGATION_TOKEN_LABEL_IN_SECRET)
@@ -74,7 +75,7 @@ private object SecretFinder {
 
   def apply(renewService: ActorRef) : SecretFinder = {
     new SecretFinder(renewService,
-      new Timer(SECRET_FIND_THREAD_NAME, IS_DAEMON_THREAD),
+      new Timer(SECRET_SCANNER_THREAD_NAME, IS_DAEMON_THREAD),
       new DefaultKubernetesClient)
   }
 }
