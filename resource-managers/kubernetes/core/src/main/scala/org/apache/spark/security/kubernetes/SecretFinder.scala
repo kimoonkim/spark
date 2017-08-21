@@ -50,7 +50,7 @@ private class SecretScanner(renewService: ActorRef,
     val secrets = kubernetesClient
       .secrets
       .withLabel(HADOOP_DELEGATION_TOKEN_LABEL_IN_SECRET)
-    renewService ! AllSecrets(secrets.list.getItems.asScala.toList)
+    renewService ! UpdateRefreshList(secrets.list.getItems.asScala.toList)
   }
 }
 
@@ -59,9 +59,9 @@ private class SecretWatcher(renewService: ActorRef) extends Watcher[Secret] {
   override def eventReceived(action: Action, secret: Secret): Unit = {
     action match {
       case Action.ADDED =>
-        renewService ! AddedSecret(secret)
+        renewService ! StartRefresh(secret)
       case Action.DELETED =>
-        renewService ! DeletedSecret(secret)
+        renewService ! StopRefresh(secret)
     }
   }
 

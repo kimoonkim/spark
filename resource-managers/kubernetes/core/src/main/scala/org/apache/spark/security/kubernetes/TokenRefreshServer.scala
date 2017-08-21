@@ -16,8 +16,42 @@
  */
 package org.apache.spark.security.kubernetes
 
-import akka.actor.ActorRef
-import io.fabric8.kubernetes.api.model.Secret
-import io.fabric8.kubernetes.client.Watcher.Action
-import io.fabric8.kubernetes.client.{KubernetesClientException, Watcher}
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
+import akka.actor.ActorSystem
+
+private class Server {
+
+  private val actorSystem = ActorSystem("TokenRefreshServer")
+  private var secretFinder : SecretFinder = _
+
+  def start(): Unit = {
+    val renewService = TokenRefreshService(actorSystem)
+    secretFinder = SecretFinder(renewService)
+  }
+
+  def join() : Unit = {
+    // scalastyle:off awaitready
+    Await.ready(actorSystem.whenTerminated, Duration.Inf)
+    // scalastyle:on awaitready
+  }
+
+  def stop(): Unit = {
+    actorSystem.terminate()
+    secretFinder.stop()
+  }
+}
+
+object TokenRefreshServer {
+
+  def main(args: Array[String]): Unit = {
+    val server = new Server
+    server.start()
+    try {
+      server.join()
+    } finally {
+      server.stop()
+    }
+  }
+}
