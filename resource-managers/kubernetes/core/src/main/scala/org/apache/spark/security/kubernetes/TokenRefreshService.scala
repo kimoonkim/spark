@@ -21,14 +21,12 @@ import java.util.concurrent.{Executors, ScheduledFuture, ThreadFactory, TimeUnit
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import io.fabric8.kubernetes.api.model.Secret
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.security.Credentials
-import org.apache.hadoop.security.token.Token
-
+import org.apache.hadoop.security.token.{Token, TokenIdentifier}
 import org.apache.spark.security.kubernetes.constants._
 
 private class TokenRefreshService extends Actor {
@@ -57,19 +55,19 @@ private class TokenRefreshService extends Actor {
     })
 
   private def addStarterTask(secret: Secret) = {
-    taskHandleBySecret.getOrElseUpdate(uid(secret), {
+    taskHandleBySecret.getOrElseUpdate(getSecretUid(secret), {
       val task = new StarterTask(secret, hadoopConf, self)
       scheduler.schedule(task, TOKEN_RENEW_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS)
     })
   }
 
   private def removeRefreshTask(secret: Secret) = {
-    val task = taskHandleBySecret.remove(uid(secret))
+    val task = taskHandleBySecret.remove(getSecretUid(secret))
     task.foreach(_.cancel(true))  // Interrupt if running.
   }
 
   private def updateRefreshTaskSet(currentSecrets: List[Secret]) = {
-    val secretByUid = currentSecrets.map(secret => (uid(secret), secret)).toMap
+    val secretByUid = currentSecrets.map(secret => (getSecretUid(secret), secret)).toMap
     val currentUids = secretByUid.keySet
     val priorUids = taskHandleBySecret.keySet
     val uidsToAdd = currentUids -- priorUids
@@ -79,7 +77,7 @@ private class TokenRefreshService extends Actor {
   }
 
   private def scheduleRenewTask(renew: Renew) = {
-    val uid = uid(renew.secret)
+    val uid = getSecretUid(renew.secret)
     if (taskHandleBySecret.get(uid).nonEmpty) {
       val renewTime = math.min(0L,
         renew.expireTime - TOKEN_RENEW_SCHEDULE_AHEAD_MILLIS - clock.nowInMillis())
@@ -88,7 +86,7 @@ private class TokenRefreshService extends Actor {
     }
   }
 
-  private def uid(secret: Secret) = secret.getMetadata.getUid
+  private def getSecretUid(secret: Secret) = secret.getMetadata.getUid
 }
 
 private class StarterTask(secret: Secret, hadoopConf: Configuration, refreshService: ActorRef)
@@ -119,7 +117,8 @@ private class StarterTask(secret: Secret, hadoopConf: Configuration, refreshServ
     tokens.getOrElse(Nil)
   }
 
-  private def renewTokens(tokens: List[Token[_]]) = {
+  private def renewTokens(tokens: List[Token[_ <: TokenIdentifier]])
+      : Map[Token[_ <: TokenIdentifier], Long] = {
     tokens.map(token => (token, token.renew(hadoopConf))).toMap
   }
 }
@@ -129,7 +128,8 @@ private class RenewTask(renew: Renew, hadoopConf: Configuration, refreshService:
 
   override def run() : Unit = {
     val deadline = renew.expireTime + TOKEN_RENEW_SCHEDULE_AHEAD_MILLIS
-    val newExpireTimeByToken = renew.expireTimeByToken.map {
+    val newExpireTimeByToken : Map[Token[_ <: TokenIdentifier], Long] =
+      renew.expireTimeByToken.map {
         item =>
           val token = item._1
           val expireTime = item._2
@@ -140,6 +140,7 @@ private class RenewTask(renew: Renew, hadoopConf: Configuration, refreshService:
             }
           (token, newExpireTime)
       }
+      .toMap
     val nextExpireTime = newExpireTimeByToken.values.min
     refreshService ! Renew(nextExpireTime, newExpireTimeByToken, renew.secret)
   }
@@ -152,7 +153,9 @@ private class Clock {
 
 private case class UpdateRefreshList(secrets: List[Secret])
 private case class StartRefresh(secret: Secret)
-private case class Renew(expireTime: Long, expireTimeByToken: Map[Token[_], Long], secret: Secret)
+private case class Renew(expireTime: Long,
+                         expireTimeByToken: Map[Token[_ <: TokenIdentifier], Long],
+                         secret: Secret)
 private case class StopRefresh(secret: Secret)
 
 private object TokenRefreshService {
