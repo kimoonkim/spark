@@ -35,7 +35,7 @@ private class SecretFinder(renewService: ActorRef,
     SECRET_SCANNER_INITIAL_DELAY_MILLIS, SECRET_SCANNER_PERIOD_MILLIS)
   kubernetesClient
     .secrets()
-    .withLabel(HADOOP_DELEGATION_TOKEN_LABEL_IN_SECRET)
+    .withLabel(SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS, SECRET_LABEL_VALUE_REFRESH_HADOOP_TOKENS)
     .watch(new SecretWatcher(renewService))
 
   def stop(): Unit = {
@@ -50,7 +50,7 @@ private class SecretScanner(renewService: ActorRef,
   override def run(): Unit = {
     val secrets = kubernetesClient
       .secrets
-      .withLabel(HADOOP_DELEGATION_TOKEN_LABEL_IN_SECRET)
+      .withLabel(SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS)
     renewService ! UpdateRefreshList(secrets.list.getItems.asScala.toList)
   }
 }

@@ -103,7 +103,7 @@ private class StarterTask(secret: Secret, hadoopConf: Configuration, refreshServ
 
   private def readHadoopTokens() = {
     val hadoopSecretData = secret.getData.asScala.filterKeys(
-      _.startsWith(HADOOP_TOKEN_KEY_IN_SECRET_DATA))
+      _.startsWith(SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS))
     val latestData = if (hadoopSecretData.nonEmpty) Some(hadoopSecretData.max._2) else None
     val credentials = latestData.map {
       data =>

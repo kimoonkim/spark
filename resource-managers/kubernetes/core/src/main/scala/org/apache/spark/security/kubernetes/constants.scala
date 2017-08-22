@@ -21,8 +21,9 @@ package object constants {
   val REFRESH_SERVER_KERBEROS_PRINCIPAL = "kimoonkim"
   val REFRESH_SERVER_KERBEROS_KEYTAB_PATH = "/etc/security/krb5.keytab"
 
-  val HADOOP_DELEGATION_TOKEN_LABEL_IN_SECRET = "hadoop.delegation.token"
-  val HADOOP_TOKEN_KEY_IN_SECRET_DATA = "hadoop-token"
+  val SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS = "refresh-hadoop-tokens"
+  val SECRET_LABEL_VALUE_REFRESH_HADOOP_TOKENS = "yes"
+  val SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS = "hadoop-token-"
 
   val REFERSH_TASKS_NUM_THREADS = 10
   val REFRESH_TASK_THREAD_NAME = "token-renewer"
