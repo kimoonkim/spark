@@ -29,9 +29,10 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.security.{Credentials, UserGroupInformation}
 import org.apache.hadoop.security.token.{Token, TokenIdentifier}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.security.kubernetes.constants._
 
-private class TokenRefreshService extends Actor {
+private class TokenRefreshService extends Actor with Logging {
 
   private val scheduler = newScheduler()
   // Keyed by secret UID.
@@ -39,11 +40,11 @@ private class TokenRefreshService extends Actor {
   private val hadoopConf = new Configuration
   private val clock = new Clock
 
-  def receive: PartialFunction[Any, Unit] = {
+  override def receive: PartialFunction[Any, Unit] = {
     case StartRefresh(secret) => addStarterTask(secret)
     case StopRefresh(secret) => removeRefreshTask(secret)
     case UpdateRefreshList(secrets) => updateRefreshTaskSet(secrets)
-    case renew @ Renew(nextExpireTime, expireTimeByToken, secret) => scheduleRenewTask(renew)
+    case renew @ Renew(nextExpireTime, expireTimeByToken, secret, _) => scheduleRenewTask(renew)
     case _ =>
   }
 
@@ -58,14 +59,20 @@ private class TokenRefreshService extends Actor {
 
   private def addStarterTask(secret: Secret) = {
     taskHandleBySecret.getOrElseUpdate(getSecretUid(secret), {
-      val task = new StarterTask(secret, hadoopConf, self)
-      scheduler.schedule(task, REFRESH_STARTER_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS)
+      val task = new StarterTask(secret, hadoopConf, self, clock)
+      val future = scheduler.schedule(task, REFRESH_STARTER_TASK_INITIAL_DELAY_MILLIS,
+        TimeUnit.MILLISECONDS)
+      logInfo(s"Started refresh of tokens in ${secret.getMetadata.getSelfLink} with ${future}")
+      future
     })
   }
 
   private def removeRefreshTask(secret: Secret) = {
-    val task = taskHandleBySecret.remove(getSecretUid(secret))
-    task.foreach(_.cancel(true))  // Interrupt if running.
+    val uid = getSecretUid(secret)
+    taskHandleBySecret.remove(uid).foreach(future => {
+      logInfo(s"Canceling refresh of tokens in ${secret.getMetadata.getSelfLink}")
+      future.cancel(true) // Interrupt if running.
+    })
   }
 
   private def updateRefreshTaskSet(currentSecrets: List[Secret]) = {
@@ -81,24 +88,49 @@ private class TokenRefreshService extends Actor {
   private def scheduleRenewTask(renew: Renew) = {
     val uid = getSecretUid(renew.secret)
     if (taskHandleBySecret.get(uid).nonEmpty) {
-      val renewTime = math.min(0L,
-        renew.expireTime - RENEW_TASK_SCHEDULE_AHEAD_MILLIS - clock.nowInMillis())
-      val task = new RenewTask(renew, hadoopConf, self)
-      taskHandleBySecret.put(uid, scheduler.schedule(task, renewTime, TimeUnit.MILLISECONDS))
+      val numConsecutiveErrors = renew.numConsecutiveErrors
+      if (numConsecutiveErrors < RENEW_TASK_MAX_CONSECUTIVE_ERRORS) {
+        val renewTime = math.max(0L,
+          renew.expireTime - RENEW_TASK_SCHEDULE_AHEAD_MILLIS - clock.nowInMillis())
+        val task = new RenewTask(renew, hadoopConf, self, clock)
+        logInfo(s"Scheduling refresh of tokens with " +
+          s"${renew.secret.getMetadata.getSelfLink} at now + $renewTime millis.")
+        taskHandleBySecret.put(uid, scheduler.schedule(task, renewTime, TimeUnit.MILLISECONDS))
+      } else {
+        logWarning(s"Got too many errors for ${renew.secret.getMetadata.getSelfLink}. Abandoning.")
+        val future = taskHandleBySecret.remove(uid)
+        future.foreach(_.cancel(true))  // Interrupt if running.
+      }
+    } else {
+      logWarning(s"Could not find an entry for renew task" +
+        s" ${renew.secret.getMetadata.getSelfLink}. Maybe the secret got deleted")
     }
   }
 
   private def getSecretUid(secret: Secret) = secret.getMetadata.getUid
 }
 
-private class StarterTask(secret: Secret, hadoopConf: Configuration, refreshService: ActorRef)
-  extends Runnable {
+private class StarterTask(secret: Secret,
+                          hadoopConf: Configuration,
+                          refreshService: ActorRef,
+                          clock: Clock) extends Runnable with Logging {
+
+  private var hasError = false
 
   override def run() : Unit = {
     val tokens = readHadoopTokens()
+    logInfo(s"Read Hadoop tokens: $tokens")
     val expireTimeByToken = renewTokens(tokens)
-    val nextExpireTime = expireTimeByToken.values.min
-    refreshService ! Renew(nextExpireTime, expireTimeByToken, secret)
+    val nextExpireTime = if (expireTimeByToken.nonEmpty) {
+      expireTimeByToken.values.min
+    } else {
+      logWarning(s"Got an empty token list with ${secret.getMetadata.getSelfLink}")
+      hasError = true
+      getRetryTime()
+    }
+    logInfo(s"Initial renew resulted with $expireTimeByToken. Next expire time $nextExpireTime")
+    val numConsecutiveErrors = if (hasError) 1 else 0
+    refreshService ! Renew(nextExpireTime, expireTimeByToken, secret, numConsecutiveErrors)
   }
 
   private def readHadoopTokens() = {
@@ -121,31 +153,66 @@ private class StarterTask(secret: Secret, hadoopConf: Configuration, refreshServ
 
   private def renewTokens(tokens: List[Token[_ <: TokenIdentifier]])
       : Map[Token[_ <: TokenIdentifier], Long] = {
-    tokens.map(token => (token, token.renew(hadoopConf))).toMap
+    tokens.map(token => {
+      val expireTime = try {
+          token.renew(hadoopConf)
+        } catch {
+          case t: Throwable =>
+            logWarning(t.getMessage, t)
+            hasError = true
+
+          getRetryTime()
+        }
+      (token, expireTime)
+    }).toMap
   }
+
+  private def getRetryTime() = clock.nowInMillis() + RENEW_TASK_DEADLINE_LOOK_AHEAD_MILLIS
 }
 
-private class RenewTask(renew: Renew, hadoopConf: Configuration, refreshService: ActorRef)
-  extends Runnable {
+private class RenewTask(renew: Renew,
+                        hadoopConf: Configuration,
+                        refreshService: ActorRef,
+                        clock: Clock) extends Runnable with Logging {
+
+  private var hasError = false
 
   override def run() : Unit = {
-    val deadline = renew.expireTime + RENEW_TASK_SCHEDULE_AHEAD_MILLIS
+    val deadline = renew.expireTime + RENEW_TASK_DEADLINE_LOOK_AHEAD_MILLIS
     val newExpireTimeByToken : Map[Token[_ <: TokenIdentifier], Long] =
       renew.expireTimeByToken.map {
         item =>
           val token = item._1
           val expireTime = item._2
-          val newExpireTime = if (expireTime <= deadline) {
-              token.renew(hadoopConf)
+          val newExpireTime =
+            if (expireTime <= deadline) {
+              try {
+                token.renew(hadoopConf)
+              } catch {
+                case t: Throwable =>
+                  logWarning(t.getMessage, t)
+                  hasError = true
+
+                getRetryTime()
+              }
             } else {
               expireTime
             }
           (token, newExpireTime)
       }
       .toMap
-    val nextExpireTime = newExpireTimeByToken.values.min
-    refreshService ! Renew(nextExpireTime, newExpireTimeByToken, renew.secret)
+    if (newExpireTimeByToken.nonEmpty) {
+      val nextExpireTime = newExpireTimeByToken.values.min
+      logInfo(s"Renewed with the result $newExpireTimeByToken. Next expire time $nextExpireTime")
+      val numConsecutiveErrors = if (hasError) renew.numConsecutiveErrors + 1 else 0
+      refreshService ! Renew(nextExpireTime, newExpireTimeByToken, renew.secret,
+        numConsecutiveErrors)
+    } else {
+      logWarning(s"Got an empty token list with ${renew.secret.getMetadata.getSelfLink}")
+    }
   }
+
+  private def getRetryTime() = clock.nowInMillis() + RENEW_TASK_DEADLINE_LOOK_AHEAD_MILLIS
 }
 
 private class Clock {
@@ -157,7 +224,8 @@ private case class UpdateRefreshList(secrets: List[Secret])
 private case class StartRefresh(secret: Secret)
 private case class Renew(expireTime: Long,
                          expireTimeByToken: Map[Token[_ <: TokenIdentifier], Long],
-                         secret: Secret)
+                         secret: Secret,
+                         numConsecutiveErrors: Int)
 private case class StopRefresh(secret: Secret)
 
 private object TokenRefreshService {

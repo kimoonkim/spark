@@ -16,15 +16,18 @@
  */
 package org.apache.spark.security.kubernetes
 
+import java.lang
 import java.util.{Timer, TimerTask}
 
 import scala.collection.JavaConverters._
 
 import akka.actor.ActorRef
-import io.fabric8.kubernetes.api.model.Secret
-import io.fabric8.kubernetes.client.{DefaultKubernetesClient, KubernetesClient, KubernetesClientException, Watcher}
+import io.fabric8.kubernetes.api.model.{Secret, SecretList}
+import io.fabric8.kubernetes.client._
 import io.fabric8.kubernetes.client.Watcher.Action
+import io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.security.kubernetes.constants._
 
 private class SecretFinder(renewService: ActorRef,
@@ -33,9 +36,7 @@ private class SecretFinder(renewService: ActorRef,
 
   timer.schedule(new SecretScanner(renewService, kubernetesClient),
     SECRET_SCANNER_INITIAL_DELAY_MILLIS, SECRET_SCANNER_PERIOD_MILLIS)
-  kubernetesClient
-    .secrets()
-    .withLabel(SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS, SECRET_LABEL_VALUE_REFRESH_HADOOP_TOKENS)
+  SecretFinder.selectSecrets(kubernetesClient)
     .watch(new SecretWatcher(renewService))
 
   def stop(): Unit = {
@@ -45,23 +46,24 @@ private class SecretFinder(renewService: ActorRef,
 }
 
 private class SecretScanner(renewService: ActorRef,
-                            kubernetesClient: KubernetesClient) extends TimerTask {
+                            kubernetesClient: KubernetesClient) extends TimerTask with Logging {
 
   override def run(): Unit = {
-    val secrets = kubernetesClient
-      .secrets
-      .withLabel(SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS)
-    renewService ! UpdateRefreshList(secrets.list.getItems.asScala.toList)
+    val secrets = SecretFinder.selectSecrets(kubernetesClient).list.getItems.asScala.toList
+    logInfo(s"Scanned ${secrets.map(_.getMetadata.getSelfLink).mkString}")
+    renewService ! UpdateRefreshList(secrets)
   }
 }
 
-private class SecretWatcher(renewService: ActorRef) extends Watcher[Secret] {
+private class SecretWatcher(renewService: ActorRef) extends Watcher[Secret] with Logging {
 
   override def eventReceived(action: Action, secret: Secret): Unit = {
     action match {
       case Action.ADDED =>
+        logInfo(s"Found ${secret.getMetadata.getSelfLink} added")
         renewService ! StartRefresh(secret)
       case Action.DELETED =>
+        logInfo(s"Found ${secret.getMetadata.getSelfLink} deleted")
         renewService ! StopRefresh(secret)
     }
   }
@@ -77,5 +79,13 @@ private object SecretFinder {
     new SecretFinder(renewService,
       new Timer(SECRET_SCANNER_THREAD_NAME, IS_DAEMON_THREAD),
       new DefaultKubernetesClient)
+  }
+
+  def selectSecrets(kubernetesClient: KubernetesClient):
+          FilterWatchListDeletable[Secret, SecretList, lang.Boolean, Watch, Watcher[Secret]] = {
+    kubernetesClient
+      .secrets()
+      .inAnyNamespace()
+      .withLabel(SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS, SECRET_LABEL_VALUE_REFRESH_HADOOP_TOKENS)
   }
 }

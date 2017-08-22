@@ -18,17 +18,17 @@ package org.apache.spark.security.kubernetes
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-
 import akka.actor.ActorSystem
+import org.apache.log4j.{Level, Logger}
 
 private class Server {
 
   private val actorSystem = ActorSystem("TokenRefreshServer")
-  private var secretFinder : SecretFinder = _
+  private var secretFinder : Option[SecretFinder] = None
 
   def start(): Unit = {
     val renewService = TokenRefreshService(actorSystem)
-    secretFinder = SecretFinder(renewService)
+    secretFinder = Some(SecretFinder(renewService))
   }
 
   def join() : Unit = {
@@ -39,16 +39,17 @@ private class Server {
 
   def stop(): Unit = {
     actorSystem.terminate()
-    secretFinder.stop()
+    secretFinder.foreach(_.stop())
   }
 }
 
 object TokenRefreshServer {
 
   def main(args: Array[String]): Unit = {
+    Logger.getRootLogger.setLevel(Level.INFO)
     val server = new Server
-    server.start()
     try {
+      server.start()
       server.join()
     } finally {
       server.stop()
