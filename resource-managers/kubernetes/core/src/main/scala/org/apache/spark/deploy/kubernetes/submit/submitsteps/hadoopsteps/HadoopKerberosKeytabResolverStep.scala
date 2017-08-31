@@ -102,17 +102,18 @@ private[spark] class HadoopKerberosKeytabResolverStep(
     val data = serialize(credentials)
     val renewalTime = getTokenRenewalInterval(tokens, hadoopConf).getOrElse(Long.MaxValue)
     val currentTime: Long = System.currentTimeMillis()
-    val initialTokenLabelName = s"$KERBEROS_SECRET_LABEL_PREFIX-$currentTime-$renewalTime"
+    val initialTokenDataKeyName = s"$KERBEROS_SECRET_LABEL_PREFIX-$currentTime-$renewalTime"
     val secretDT =
       new SecretBuilder()
         .withNewMetadata()
           .withName(HADOOP_KERBEROS_SECRET_NAME)
+          .withLabels(Map("refresh-hadoop-tokens" -> "yes").asJava)
           .endMetadata()
-          .addToData(initialTokenLabelName, Base64.encodeBase64String(data))
+          .addToData(initialTokenDataKeyName, Base64.encodeBase64String(data))
       .build()
     val bootstrapKerberos = new KerberosTokenConfBootstrapImpl(
       HADOOP_KERBEROS_SECRET_NAME,
-      initialTokenLabelName,
+      initialTokenDataKeyName,
       jobUserUGI.getShortUserName)
     val withKerberosEnvPod = bootstrapKerberos.bootstrapMainContainerAndVolumes(
       PodWithMainContainer(
@@ -121,13 +122,13 @@ private[spark] class HadoopKerberosKeytabResolverStep(
     hadoopConfigSpec.copy(
       additionalDriverSparkConf =
         hadoopConfigSpec.additionalDriverSparkConf ++ Map(
-          HADOOP_KERBEROS_CONF_LABEL -> initialTokenLabelName,
+          HADOOP_KERBEROS_CONF_ITEM_KEY -> initialTokenDataKeyName,
           HADOOP_KERBEROS_CONF_SECRET -> HADOOP_KERBEROS_SECRET_NAME),
       driverPod = withKerberosEnvPod.pod,
       driverContainer = withKerberosEnvPod.mainContainer,
       dtSecret = Some(secretDT),
       dtSecretName = HADOOP_KERBEROS_SECRET_NAME,
-      dtSecretLabel = initialTokenLabelName)
+      dtSecretItemKey = initialTokenDataKeyName)
   }
 
   // Functions that should be in Core with Rebase to 2.3

@@ -113,8 +113,8 @@ package object constants {
     "spark.kubernetes.kerberos.dt"
   private[spark] val HADOOP_KERBEROS_CONF_SECRET =
     "spark.kubernetes.kerberos.secretname"
-  private[spark] val HADOOP_KERBEROS_CONF_LABEL =
-    "spark.kubernetes.kerberos.labelname"
+  private[spark] val HADOOP_KERBEROS_CONF_ITEM_KEY =
+    "spark.kubernetes.kerberos.itemkeyname"
   private[spark] val KERBEROS_SECRET_LABEL_PREFIX =
     "hadoop-tokens"
   private[spark] val SPARK_HADOOP_PREFIX = "spark.hadoop."

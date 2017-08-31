@@ -36,8 +36,8 @@ private[spark] class HadoopStepsOrchestrator(
    private val maybeKeytab = submissionSparkConf.get(KUBERNETES_KERBEROS_KEYTAB)
      .map(k => new File(k))
    private val maybeExistingSecret = submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_NAME)
-   private val maybeExistingSecretLabel =
-     submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_LABEL)
+   private val maybeExistingSecretItemKey =
+     submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_ITEM_KEY)
    private val hadoopConfigurationFiles = getHadoopConfFiles(hadoopConfDir)
    logInfo(s"Hadoop Conf directory: $hadoopConfDir")
 
@@ -55,10 +55,10 @@ private[spark] class HadoopStepsOrchestrator(
 
    OptionRequirements.requireBothOrNeitherDefined(
      maybeExistingSecret,
-     maybeExistingSecretLabel,
+     maybeExistingSecretItemKey,
      "If a secret storing a Kerberos Delegation Token is specified you must also" +
      " specify the label where the data is stored",
-     "If a secret label where the data of the Kerberos Delegation Token is specified" +
+     "If a secret data item-key where the data of the Kerberos Delegation Token is specified" +
        " you must also specify the name of the secret")
 
   def getHadoopSteps(): Seq[HadoopConfigurationStep] = {
@@ -72,10 +72,10 @@ private[spark] class HadoopStepsOrchestrator(
       hadoopConfDir)
     val maybeKerberosStep =
       if (isKerberosEnabled) {
-        maybeExistingSecret.map(secretLabel => Some(new HadoopKerberosSecretResolverStep(
+        maybeExistingSecret.map(secretItemKey => Some(new HadoopKerberosSecretResolverStep(
          submissionSparkConf,
-          secretLabel,
-          maybeExistingSecretLabel.get))).getOrElse(Some(
+          secretItemKey,
+          maybeExistingSecretItemKey.get))).getOrElse(Some(
             new HadoopKerberosKeytabResolverStep(
               submissionSparkConf,
               maybePrincipal,

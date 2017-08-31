@@ -25,18 +25,18 @@ import org.apache.spark.deploy.kubernetes.constants._
  /**
   * This step assumes that you have already done all the heavy lifting in retrieving a
   * delegation token and storing the following data in a secret before running this job.
-  * This step requires that you just specify the secret name and label corresponding to the
-  * data where the delegation token is stored.
+  * This step requires that you just specify the secret name and data item-key corresponding
+  * to the data where the delegation token is stored.
   */
 private[spark] class HadoopKerberosSecretResolverStep(
   submissionSparkConf: SparkConf,
   tokenSecretName: String,
-  tokenLabelName: String) extends HadoopConfigurationStep {
+  tokenItemKeyName: String) extends HadoopConfigurationStep {
 
   override def configureContainers(hadoopConfigSpec: HadoopConfigSpec): HadoopConfigSpec = {
     val bootstrapKerberos = new KerberosTokenConfBootstrapImpl(
       tokenSecretName,
-      tokenLabelName,
+      tokenItemKeyName,
       UserGroupInformation.getCurrentUser.getShortUserName)
     val withKerberosEnvPod = bootstrapKerberos.bootstrapMainContainerAndVolumes(
       PodWithMainContainer(
@@ -47,10 +47,10 @@ private[spark] class HadoopKerberosSecretResolverStep(
       driverContainer = withKerberosEnvPod.mainContainer,
       additionalDriverSparkConf =
         hadoopConfigSpec.additionalDriverSparkConf ++ Map(
-          HADOOP_KERBEROS_CONF_LABEL -> tokenLabelName,
+          HADOOP_KERBEROS_CONF_ITEM_KEY -> tokenItemKeyName,
           HADOOP_KERBEROS_CONF_SECRET -> tokenSecretName),
       dtSecret = None,
       dtSecretName = tokenSecretName,
-      dtSecretLabel = tokenLabelName)
+      dtSecretItemKey = tokenItemKeyName)
   }
 }

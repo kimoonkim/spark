@@ -36,7 +36,7 @@ private[spark] trait KerberosTokenBootstrapConf {
 
 private[spark] class KerberosTokenConfBootstrapImpl(
   secretName: String,
-  secretLabel: String,
+  secretItemKey: String,
   userName: String) extends KerberosTokenBootstrapConf with Logging{
 
 
@@ -62,7 +62,7 @@ private[spark] class KerberosTokenConfBootstrapImpl(
         .endVolumeMount()
       .addNewEnv()
         .withName(ENV_HADOOP_TOKEN_FILE_LOCATION)
-        .withValue(s"$SPARK_APP_HADOOP_CREDENTIALS_BASE_DIR/$secretLabel")
+        .withValue(s"$SPARK_APP_HADOOP_CREDENTIALS_BASE_DIR/$secretItemKey")
         .endEnv()
       .addNewEnv()
         .withName(ENV_SPARK_USER)

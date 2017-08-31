@@ -35,7 +35,6 @@ private[spark] class HadoopStepsOrchestratorSuite extends SparkFunSuite {
     val steps = hadoopOrchestrator.getHadoopSteps()
     assert(steps.length === 1)
     assert(steps.head.isInstanceOf[HadoopConfMounterStep])
-    assert(true)
   }
 
   test("Testing with Keytab Kerberos Login") {
@@ -72,7 +71,7 @@ private[spark] class HadoopStepsOrchestratorSuite extends SparkFunSuite {
     val sparkTestConf = new SparkConf(true)
       .set(KUBERNETES_KERBEROS_SUPPORT, true)
       .set(KUBERNETES_KERBEROS_DT_SECRET_NAME, "dtSecret")
-      .set(KUBERNETES_KERBEROS_DT_SECRET_LABEL, "dtLabel")
+      .set(KUBERNETES_KERBEROS_DT_SECRET_ITEM_KEY, "dtItemKey")
     val hadoopOrchestrator = new HadoopStepsOrchestrator(
       NAMESPACE,
       HADOOP_CONFIG_MAP,

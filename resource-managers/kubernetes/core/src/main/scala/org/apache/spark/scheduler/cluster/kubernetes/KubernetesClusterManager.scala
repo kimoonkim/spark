@@ -44,7 +44,7 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager wit
     val maybeHadoopConfigMap = sparkConf.getOption(HADOOP_CONFIG_MAP_SPARK_CONF_NAME)
     val maybeHadoopConfDir = sparkConf.getOption(HADOOP_CONF_DIR_LOC)
     val maybeDTSecretName = sparkConf.getOption(HADOOP_KERBEROS_CONF_SECRET)
-    val maybeDTLabelName = sparkConf.getOption(HADOOP_KERBEROS_CONF_LABEL)
+    val maybeDTLabelName = sparkConf.getOption(HADOOP_KERBEROS_CONF_ITEM_KEY)
     val maybeInitContainerConfigMap = sparkConf.get(EXECUTOR_INIT_CONTAINER_CONFIG_MAP)
     val maybeInitContainerConfigMapKey = sparkConf.get(EXECUTOR_INIT_CONTAINER_CONFIG_MAP_KEY)
     val maybeSubmittedFilesSecret = sparkConf.get(EXECUTOR_SUBMITTED_SMALL_FILES_SECRET)
@@ -91,11 +91,11 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager wit
     }
     val kerberosBootstrap = for {
       secretName <- maybeDTSecretName
-      secretLabel <- maybeDTLabelName
+      secretItemKey <- maybeDTLabelName
     } yield {
       new KerberosTokenConfBootstrapImpl(
         secretName,
-        secretLabel,
+        secretItemKey,
         Utils.getCurrentUserName)
     }
     val mountSmallFilesBootstrap = for {

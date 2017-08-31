@@ -786,7 +786,7 @@ from the other deployment modes. See the [configuration page](configuration.html
   <td><code>spark.kubernetes.kerberos.enabled</code></td> 
   <td>false</td>
   <td>
-    Specify whether your job is a job that will require a Kerberos Authorization to access HDFS. By default, we
+    Specify whether your job requires a Kerberos Authentication to access HDFS. By default, we
     will assume that you will not require secure HDFS access. 
   </td>
 </tr>
@@ -820,12 +820,12 @@ from the other deployment modes. See the [configuration page](configuration.html
   </td>
 </tr>
 <tr>
-  <td><code>spark.kubernetes.kerberos.tokensecret.label</code></td> 
+  <td><code>spark.kubernetes.kerberos.tokensecret.itemkey</code></td> 
   <td>spark.kubernetes.kerberos.dt.label</td>
   <td>
     Assuming you have set <code>spark.kubernetes.kerberos.enabled</code> to be true. This will let you specify 
     the label within the pre-specified secret where the data of your existing delegation token data is stored. 
-    We have a default value of <code>spark.kubernetes.kerberos.dt.label</code> should you not include it. But
+    We have a default value of <code>spark.kubernetes.kerberos.tokensecret.itemkey</code> should you not include it. But
     you should always include this if you are proposing a pre-existing secret contain the delegation token data.
   <td><code>spark.executorEnv.[EnvironmentVariableName]</code></td> 
   <td>(none)</td>

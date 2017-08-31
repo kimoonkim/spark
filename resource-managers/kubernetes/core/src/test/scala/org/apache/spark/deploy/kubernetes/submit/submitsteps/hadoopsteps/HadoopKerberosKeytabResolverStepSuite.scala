@@ -56,14 +56,16 @@ private[spark] class HadoopKerberosKeytabResolverStepSuite extends SparkFunSuite
       "",
       "")
     val returnContainerSpec = keytabStep.configureContainers(hadoopConfSpec)
-    assert(returnContainerSpec.additionalDriverSparkConf(HADOOP_KERBEROS_CONF_LABEL)
+    assert(returnContainerSpec.additionalDriverSparkConf(HADOOP_KERBEROS_CONF_ITEM_KEY)
         .contains(KERBEROS_SECRET_LABEL_PREFIX))
     assert(returnContainerSpec.additionalDriverSparkConf(HADOOP_KERBEROS_CONF_SECRET) ===
       HADOOP_KERBEROS_SECRET_NAME)
     assert(returnContainerSpec.driverContainer.getName == DRIVER_CONTAINER_NAME)
     assert(returnContainerSpec.driverPod.getMetadata.getLabels.asScala === POD_LABEL)
-    assert(returnContainerSpec.dtSecretLabel.contains(KERBEROS_SECRET_LABEL_PREFIX))
+    assert(returnContainerSpec.dtSecretItemKey.contains(KERBEROS_SECRET_LABEL_PREFIX))
     assert(returnContainerSpec.dtSecretName === HADOOP_KERBEROS_SECRET_NAME)
+    assert(returnContainerSpec.dtSecret.get.getMetadata.getLabels.asScala ===
+      Map("refresh-hadoop-tokens" -> "yes"))
     assert(returnContainerSpec.dtSecret.nonEmpty)
     assert(returnContainerSpec.dtSecret.get.getMetadata.getName === HADOOP_KERBEROS_SECRET_NAME)
   }

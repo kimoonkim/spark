@@ -59,7 +59,7 @@ private[spark] class HadoopConfigBootstrapStepSuite extends SparkFunSuite with B
         dtSecret =
           Some(EXPECTED_SECRET),
         dtSecretName = HADOOP_KERBEROS_SECRET_NAME,
-        dtSecretLabel = ""))
+        dtSecretItemKey = ""))
   }
 
   test("Test modification of driverSpec with Hadoop Steps") {

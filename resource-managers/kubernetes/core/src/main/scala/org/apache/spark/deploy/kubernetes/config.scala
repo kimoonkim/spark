@@ -570,9 +570,9 @@ package object config extends Logging {
       .stringConf
       .createOptional
 
-  private[spark] val KUBERNETES_KERBEROS_DT_SECRET_LABEL =
-    ConfigBuilder("spark.kubernetes.kerberos.tokensecret.label")
-      .doc("Specify the label of the data where " +
+  private[spark] val KUBERNETES_KERBEROS_DT_SECRET_ITEM_KEY =
+    ConfigBuilder("spark.kubernetes.kerberos.tokensecret.itemkey")
+      .doc("Specify the item key of the data where " +
         " your existing delegation token is stored. This removes the need" +
         " for the job user to provide any keytab for launching a job")
       .stringConf

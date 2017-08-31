@@ -29,15 +29,15 @@ private[spark] class HadoopKerberosSecretResolverStepSuite extends SparkFunSuite
   private val POD_LABEL = Map("bootstrap" -> "true")
   private val DRIVER_CONTAINER_NAME = "driver-container"
   private val TOKEN_SECRET_NAME = "secretName"
-  private val TOKEN_SECRET_LABEL = "secretLabel"
+  private val TOKEN_SECRET_DATA_ITEM_KEY = "secretItemKey"
 
   test("Testing kerberos with Secret") {
     val keytabStep = new HadoopKerberosSecretResolverStep(
       new SparkConf(),
       TOKEN_SECRET_NAME,
-      TOKEN_SECRET_LABEL)
+      TOKEN_SECRET_DATA_ITEM_KEY)
     val expectedDriverSparkConf = Map(
-      HADOOP_KERBEROS_CONF_LABEL -> TOKEN_SECRET_LABEL,
+      HADOOP_KERBEROS_CONF_ITEM_KEY -> TOKEN_SECRET_DATA_ITEM_KEY,
       HADOOP_KERBEROS_CONF_SECRET -> TOKEN_SECRET_NAME)
     val hadoopConfSpec = HadoopConfigSpec(
       Map.empty[String, String],
@@ -57,7 +57,7 @@ private[spark] class HadoopKerberosSecretResolverStepSuite extends SparkFunSuite
     assert(returnContainerSpec.driverContainer.getName == DRIVER_CONTAINER_NAME)
     assert(returnContainerSpec.driverPod.getMetadata.getLabels.asScala === POD_LABEL)
     assert(returnContainerSpec.dtSecret === None)
-    assert(returnContainerSpec.dtSecretLabel === TOKEN_SECRET_LABEL)
+    assert(returnContainerSpec.dtSecretItemKey === TOKEN_SECRET_DATA_ITEM_KEY)
     assert(returnContainerSpec.dtSecretName === TOKEN_SECRET_NAME)
   }
 }

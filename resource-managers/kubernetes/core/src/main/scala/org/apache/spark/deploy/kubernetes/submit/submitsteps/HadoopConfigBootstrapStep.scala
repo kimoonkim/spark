@@ -42,7 +42,7 @@ private[spark] class HadoopConfigBootstrapStep(
       additionalDriverSparkConf = Map.empty[String, String],
       dtSecret = None,
       dtSecretName = HADOOP_KERBEROS_SECRET_NAME,
-      dtSecretLabel = "")
+      dtSecretItemKey = "")
     for (nextStep <- hadoopConfigurationSteps) {
       currentHadoopSpec = nextStep.configureContainers(currentHadoopSpec)
     }
