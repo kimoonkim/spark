@@ -816,7 +816,7 @@ from the other deployment modes. See the [configuration page](configuration.html
   <td>
     Assuming you have set <code>spark.kubernetes.kerberos.enabled</code> to be true. This will let you specify 
     the name of the secret where your existing delegation token data is stored. You must also specify the 
-    label <code>spark.kubernetes.kerberos.tokensecret.name</code> where your data is stored on the secret. 
+    item key <code>spark.kubernetes.kerberos.tokensecret.itemkey</code> where your data is stored on the secret. 
   </td>
 </tr>
 <tr>

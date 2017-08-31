@@ -82,11 +82,13 @@ private[spark] class KubernetesClusterManager extends ExternalClusterManager wit
     val hadoopBootStrap = for {
       hadoopConfigMap <- maybeHadoopConfigMap
     } yield {
+      val hadoopUtil = new HadoopUGIUtil
       val hadoopConfigurations = maybeHadoopConfDir.map(
           conf_dir => getHadoopConfFiles(conf_dir)).getOrElse(Array.empty[File])
       new HadoopConfBootstrapImpl(
         hadoopConfigMap,
-        hadoopConfigurations
+        hadoopConfigurations,
+        hadoopUtil
       )
     }
     val kerberosBootstrap = for {

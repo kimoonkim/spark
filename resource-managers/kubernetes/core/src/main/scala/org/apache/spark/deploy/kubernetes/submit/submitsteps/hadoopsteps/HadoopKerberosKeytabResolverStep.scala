@@ -26,13 +26,13 @@ import io.fabric8.kubernetes.api.model.SecretBuilder
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
-import org.apache.hadoop.security.{Credentials, UserGroupInformation}
+import org.apache.hadoop.security.Credentials
 import org.apache.hadoop.security.token.{Token, TokenIdentifier}
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier
 
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.SparkHadoopUtil
-import org.apache.spark.deploy.kubernetes.{KerberosTokenConfBootstrapImpl, PodWithMainContainer}
+import org.apache.spark.deploy.kubernetes.{HadoopUGIUtil, KerberosTokenConfBootstrapImpl, PodWithMainContainer}
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.internal.Logging
 
@@ -51,16 +51,18 @@ import org.apache.spark.internal.Logging
 private[spark] class HadoopKerberosKeytabResolverStep(
   submissionSparkConf: SparkConf,
   maybePrincipal: Option[String],
-  maybeKeytab: Option[File]) extends HadoopConfigurationStep with Logging{
-   private var originalCredentials: Credentials = _
-   private var dfs : FileSystem = _
-   private var renewer: String = _
-   private var credentials: Credentials = _
-   private var tokens: Iterable[Token[_ <: TokenIdentifier]] = _
-   override def configureContainers(hadoopConfigSpec: HadoopConfigSpec): HadoopConfigSpec = {
+  maybeKeytab: Option[File],
+  hadoopUGI: HadoopUGIUtil) extends HadoopConfigurationStep with Logging{
+    private var originalCredentials: Credentials = _
+    private var dfs : FileSystem = _
+    private var renewer: String = _
+    private var credentials: Credentials = _
+    private var tokens: Iterable[Token[_ <: TokenIdentifier]] = _
+
+    override def configureContainers(hadoopConfigSpec: HadoopConfigSpec): HadoopConfigSpec = {
     val hadoopConf = SparkHadoopUtil.get.newConfiguration(submissionSparkConf)
     logDebug(s"Hadoop Configuration: ${hadoopConf.toString}")
-    if (!UserGroupInformation.isSecurityEnabled) logError("Hadoop not configuration with Kerberos")
+    if (hadoopUGI.isSecurityEnabled) logError("Hadoop not configuration with Kerberos")
     val maybeJobUserUGI =
       for {
         principal <- maybePrincipal
@@ -71,12 +73,12 @@ private[spark] class HadoopKerberosKeytabResolverStep(
         submissionSparkConf.set("spark.yarn.principal", principal)
         submissionSparkConf.set("spark.yarn.keytab", keytab.toURI.toString)
         logDebug("Logged into KDC with keytab using Job User UGI")
-        UserGroupInformation.loginUserFromKeytabAndReturnUGI(
+        hadoopUGI.loginUserFromKeytabAndReturnUGI(
           principal,
           keytab.toURI.toString)
       }
     // In the case that keytab is not specified we will read from Local Ticket Cache
-    val jobUserUGI = maybeJobUserUGI.getOrElse(UserGroupInformation.getCurrentUser)
+    val jobUserUGI = maybeJobUserUGI.getOrElse(hadoopUGI.getCurrentUser)
     // It is necessary to run as jobUserUGI because logged in user != Current User
     jobUserUGI.doAs(new PrivilegedExceptionAction[Void] {
       override def run(): Void = {
@@ -92,12 +94,15 @@ private[spark] class HadoopKerberosKeytabResolverStep(
         logDebug(s"Renewer is: $renewer")
         credentials = new Credentials(originalCredentials)
         dfs.addDelegationTokens(renewer, credentials)
+        // This is difficult to Mock and will require refactoring
         tokens = credentials.getAllTokens.asScala
         logDebug(s"Tokens: ${credentials.toString}")
         logDebug(s"All tokens: ${tokens.mkString(",")}")
         logDebug(s"All secret keys: ${credentials.getAllSecretKeys}")
         null
       }})
+    credentials.getAllTokens.asScala.isEmpty
+    tokens.isEmpty
     if (tokens.isEmpty) logError("Did not obtain any Delegation Tokens")
     val data = serialize(credentials)
     val renewalTime = getTokenRenewalInterval(tokens, hadoopConf).getOrElse(Long.MaxValue)

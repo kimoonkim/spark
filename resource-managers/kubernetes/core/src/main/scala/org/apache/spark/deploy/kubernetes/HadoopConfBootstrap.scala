@@ -21,7 +21,6 @@ import java.io.File
 import scala.collection.JavaConverters._
 
 import io.fabric8.kubernetes.api.model.{ContainerBuilder, KeyToPathBuilder, PodBuilder}
-import org.apache.hadoop.security.UserGroupInformation
 
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.internal.Logging
@@ -42,7 +41,8 @@ private[spark] trait HadoopConfBootstrap {
 
 private[spark] class HadoopConfBootstrapImpl(
   hadoopConfConfigMapName: String,
-  hadoopConfigFiles: Seq[File]) extends HadoopConfBootstrap with Logging{
+  hadoopConfigFiles: Seq[File],
+  hadoopUGI: HadoopUGIUtil) extends HadoopConfBootstrap with Logging{
 
   override def bootstrapMainContainerAndVolumes(
     originalPodWithMainContainer: PodWithMainContainer)
@@ -76,7 +76,7 @@ private[spark] class HadoopConfBootstrapImpl(
         .endEnv()
       .addNewEnv()
         .withName(ENV_SPARK_USER)
-        .withValue(UserGroupInformation.getCurrentUser.getShortUserName)
+        .withValue(hadoopUGI.getShortName)
         .endEnv()
       .build()
     originalPodWithMainContainer.copy(
