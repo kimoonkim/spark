@@ -18,9 +18,10 @@ package org.apache.spark.deploy.kubernetes.submit
 
 import java.util.{Collections, UUID}
 
-import io.fabric8.kubernetes.api.model.{ContainerBuilder, OwnerReferenceBuilder, PodBuilder}
+import io.fabric8.kubernetes.api.model.{ContainerBuilder, EnvVar, EnvVarBuilder, OwnerReferenceBuilder, PodBuilder}
 import io.fabric8.kubernetes.client.KubernetesClient
 import scala.collection.mutable
+import scala.collection.JavaConverters._
 
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.config._
@@ -80,7 +81,7 @@ private[spark] class Client(
     org.apache.spark.internal.config.DRIVER_JAVA_OPTIONS)
   private val isKerberosEnabled = submissionSparkConf.get(KUBERNETES_KERBEROS_SUPPORT)
   private val maybeSimpleAuthentication =
-    if (isKerberosEnabled) s" -D$HADOOP_SECURITY_AUTHENTICATION=simple" else ""
+    if (isKerberosEnabled) s"-D$HADOOP_SECURITY_AUTHENTICATION=simple" else ""
 
    /**
     * Run command that initalizes a DriverSpec that will be updated after each
@@ -95,18 +96,22 @@ private[spark] class Client(
       currentDriverSpec = nextStep.configureDriver(currentDriverSpec)
     }
     val resolvedDriverJavaOpts = currentDriverSpec
-      .driverSparkConf
-      // We don't need this anymore since we just set the JVM options on the environment
-      .remove(org.apache.spark.internal.config.DRIVER_JAVA_OPTIONS)
-      .getAll
-      .map {
-        case (confKey, confValue) => s"-D$confKey=$confValue"
-      }.mkString(" ") + driverJavaOptions.map(" " + _).getOrElse("") + maybeSimpleAuthentication
+        .driverSparkConf
+        // We don't need this anymore since we just set the JVM options on the environment
+        .remove(org.apache.spark.internal.config.DRIVER_JAVA_OPTIONS)
+        .getAll
+        .map {
+          case (confKey, confValue) => s"-D$confKey=$confValue"
+        } ++ driverJavaOptions.map(Utils.splitCommandString).getOrElse(Seq.empty) :+
+        maybeSimpleAuthentication
+    val driverJavaOptsEnvs: Seq[EnvVar] = resolvedDriverJavaOpts.zipWithIndex.map {
+      case (option, index) => new EnvVarBuilder()
+          .withName(s"$ENV_JAVA_OPT_PREFIX$index")
+          .withValue(option)
+          .build()
+    }
     val resolvedDriverContainer = new ContainerBuilder(currentDriverSpec.driverContainer)
-      .addNewEnv()
-        .withName(ENV_DRIVER_JAVA_OPTS)
-        .withValue(resolvedDriverJavaOpts)
-        .endEnv()
+      .addAllToEnv(driverJavaOptsEnvs.asJava)
       .build()
     val resolvedDriverPod = new PodBuilder(currentDriverSpec.driverPod)
       .editSpec()

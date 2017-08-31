@@ -16,21 +16,23 @@
  */
 package org.apache.spark.deploy.kubernetes.submit
 
+import scala.collection.JavaConverters._
+
 import com.google.common.collect.Iterables
 import io.fabric8.kubernetes.api.model._
-import io.fabric8.kubernetes.client.dsl.{MixedOperation, NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable, PodResource}
 import io.fabric8.kubernetes.client.{KubernetesClient, Watch}
-import org.apache.spark.deploy.kubernetes.constants._
-import org.apache.spark.deploy.kubernetes.submit.submitsteps.{DriverConfigurationStep, KubernetesDriverSpec}
-import org.apache.spark.{SparkConf, SparkFunSuite}
-import org.mockito.Mockito.{doReturn, verify, when}
-import org.mockito.invocation.InvocationOnMock
-import org.mockito.stubbing.Answer
+import io.fabric8.kubernetes.client.dsl.{MixedOperation, NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable, PodResource}
 import org.mockito.{ArgumentCaptor, Mock, MockitoAnnotations}
+import org.mockito.invocation.InvocationOnMock
+import org.mockito.Mockito.{doReturn, verify, when}
+import org.mockito.stubbing.Answer
 import org.scalatest.BeforeAndAfter
 import org.scalatest.mock.MockitoSugar._
 
-import scala.collection.JavaConverters._
+import org.apache.spark.{SparkConf, SparkFunSuite}
+import org.apache.spark.deploy.kubernetes.config._
+import org.apache.spark.deploy.kubernetes.constants._
+import org.apache.spark.deploy.kubernetes.submit.submitsteps.{DriverConfigurationStep, KubernetesDriverSpec}
 
 private[spark] class ClientSuite extends SparkFunSuite with BeforeAndAfter {
 
@@ -135,7 +137,11 @@ private[spark] class ClientSuite extends SparkFunSuite with BeforeAndAfter {
         .set("spark.logConf", "true")
         .set(
           org.apache.spark.internal.config.DRIVER_JAVA_OPTIONS,
-          "-XX:+|-HeapDumpOnOutOfMemoryError")
+          "-XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDetails")
+        .set(
+          KUBERNETES_KERBEROS_SUPPORT,
+          true
+        )
     val submissionClient = new Client(
         submissionSteps,
         sparkConf,
@@ -147,15 +153,25 @@ private[spark] class ClientSuite extends SparkFunSuite with BeforeAndAfter {
     val createdPod = createdPodArgumentCaptor.getValue
     val driverContainer = Iterables.getOnlyElement(createdPod.getSpec.getContainers)
     assert(driverContainer.getName === SecondTestConfigurationStep.containerName)
-    val driverJvmOptsEnv = Iterables.getOnlyElement(driverContainer.getEnv)
-    assert(driverJvmOptsEnv.getName === ENV_DRIVER_JAVA_OPTS)
-    val driverJvmOpts = driverJvmOptsEnv.getValue.split(" ").toSet
-    assert(driverJvmOpts.contains("-Dspark.logConf=true"))
-    assert(driverJvmOpts.contains(
+    val driverJvmOptsEnvs = driverContainer.getEnv.asScala.filter { env =>
+      env.getName.startsWith(ENV_JAVA_OPT_PREFIX)
+    }.sortBy(_.getName)
+    logInfo(s"driverJVM Options $driverJvmOptsEnvs")
+    assert(driverJvmOptsEnvs.size === 6)
+
+    val expectedJvmOptsValues = Seq(
+        "-Dspark.kubernetes.kerberos.enabled=true",
+        "-Dspark.logConf=true",
         s"-D${SecondTestConfigurationStep.sparkConfKey}=" +
-          SecondTestConfigurationStep.sparkConfValue))
-    assert(driverJvmOpts.contains(
-        "-XX:+|-HeapDumpOnOutOfMemoryError"))
+            s"${SecondTestConfigurationStep.sparkConfValue}",
+        s"-XX:+HeapDumpOnOutOfMemoryError",
+        s"-XX:+PrintGCDetails",
+        "-Dspark.hadoop.hadoop.security.authentication=simple")
+    driverJvmOptsEnvs.zip(expectedJvmOptsValues).zipWithIndex.foreach {
+      case ((resolvedEnv, expectedJvmOpt), index) =>
+        assert(resolvedEnv.getName === s"$ENV_JAVA_OPT_PREFIX$index")
+        assert(resolvedEnv.getValue === expectedJvmOpt)
+    }
   }
 
   test("Waiting for app completion should stall on the watcher") {
@@ -211,8 +227,8 @@ private object SecondTestConfigurationStep extends DriverConfigurationStep {
   override def configureDriver(driverSpec: KubernetesDriverSpec): KubernetesDriverSpec = {
     val modifiedPod = new PodBuilder(driverSpec.driverPod)
       .editMetadata()
-      .addToAnnotations(annotationKey, annotationValue)
-      .endMetadata()
+        .addToAnnotations(annotationKey, annotationValue)
+        .endMetadata()
       .build()
     val resolvedSparkConf = driverSpec.driverSparkConf.clone().set(sparkConfKey, sparkConfValue)
     val modifiedContainer = new ContainerBuilder(driverSpec.driverContainer)
