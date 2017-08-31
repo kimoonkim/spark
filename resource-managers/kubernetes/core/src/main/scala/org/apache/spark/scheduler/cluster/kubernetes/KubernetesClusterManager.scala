@@ -27,9 +27,9 @@ import org.apache.spark.deploy.kubernetes.submit.MountSmallFilesBootstrapImpl
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend, TaskScheduler, TaskSchedulerImpl}
 import org.apache.spark.util.Utils
+import org.apache.spark.SparkContext
 
 private[spark] class KubernetesClusterManager extends ExternalClusterManager with Logging {
-  import org.apache.spark.SparkContext
   override def canCreate(masterURL: String): Boolean = masterURL.startsWith("k8s")
 
   override def createTaskScheduler(sc: SparkContext, masterURL: String): TaskScheduler = {

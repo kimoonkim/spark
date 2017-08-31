@@ -23,7 +23,8 @@ import scala.collection.JavaConverters._
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.SparkFunSuite
 
-private[spark] class InitContainerResourceStagingServerSecretPluginSuite extends SparkFunSuite with BeforeAndAfter{
+class InitContainerResourceStagingServerSecretPluginSuite
+  extends SparkFunSuite with BeforeAndAfter{
   private val INIT_CONTAINER_SECRET_NAME = "init-secret"
   private val INIT_CONTAINER_SECRET_MOUNT = "/tmp/secret"
 

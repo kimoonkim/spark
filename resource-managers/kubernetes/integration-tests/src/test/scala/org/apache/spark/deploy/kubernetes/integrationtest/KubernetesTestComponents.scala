@@ -19,12 +19,11 @@ package org.apache.spark.deploy.kubernetes.integrationtest
 import java.util.UUID
 
 import io.fabric8.kubernetes.client.DefaultKubernetesClient
+import org.scalatest.concurrent.Eventually
 import scala.collection.JavaConverters._
 
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.kubernetes.config._
-
-import org.scalatest.concurrent.Eventually
 
 private[spark] class KubernetesTestComponents(defaultClient: DefaultKubernetesClient) {
 

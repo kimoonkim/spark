@@ -156,7 +156,6 @@ private[spark] class ClientSuite extends SparkFunSuite with BeforeAndAfter {
     val driverJvmOptsEnvs = driverContainer.getEnv.asScala.filter { env =>
       env.getName.startsWith(ENV_JAVA_OPT_PREFIX)
     }.sortBy(_.getName)
-    logInfo(s"driverJVM Options $driverJvmOptsEnvs")
     assert(driverJvmOptsEnvs.size === 6)
 
     val expectedJvmOptsValues = Seq(

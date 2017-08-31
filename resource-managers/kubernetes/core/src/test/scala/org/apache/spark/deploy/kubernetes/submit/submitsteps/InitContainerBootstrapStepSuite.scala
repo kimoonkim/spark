@@ -31,7 +31,7 @@ import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.deploy.kubernetes.submit.submitsteps.initcontainer.{InitContainerConfigurationStep, InitContainerSpec}
 import org.apache.spark.util.Utils
 
-private[spark] class InitContainerBootstrapStepSuite extends SparkFunSuite {
+class InitContainerBootstrapStepSuite extends SparkFunSuite {
 
   private val OBJECT_MAPPER = new ObjectMapper().registerModule(DefaultScalaModule)
   private val CONFIG_MAP_NAME = "spark-init-config-map"

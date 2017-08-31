@@ -24,13 +24,12 @@ import scala.collection.JavaConverters._
 
 import com.spotify.docker.client.{DefaultDockerClient, DockerCertificates, LoggingBuildHandler}
 import org.apache.http.client.utils.URIBuilder
-
-import org.apache.spark.internal.Logging
-
-import org.apache.spark.util.RedirectThread
-
 import org.scalatest.concurrent.{Eventually, PatienceConfiguration}
 import org.scalatest.time.{Minutes, Seconds, Span}
+
+import org.apache.spark.internal.Logging
+import org.apache.spark.util.RedirectThread
+
 
 private[spark] class SparkDockerImageBuilder
   (private val dockerEnv: Map[String, String]) extends Logging{
