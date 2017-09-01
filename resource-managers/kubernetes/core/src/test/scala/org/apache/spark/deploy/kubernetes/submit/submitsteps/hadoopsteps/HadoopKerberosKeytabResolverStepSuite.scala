@@ -23,25 +23,73 @@ import scala.collection.JavaConverters._
 
 import com.google.common.io.Files
 import io.fabric8.kubernetes.api.model._
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.io.Text
+import org.apache.hadoop.security.Credentials
+import org.apache.hadoop.security.UserGroupInformation
+import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier
+import org.apache.hadoop.security.token.Token
+import org.mockito.{Mock, MockitoAnnotations}
+import org.mockito.Matchers.any
+import org.mockito.Mockito.when
+import org.mockito.invocation.InvocationOnMock
+import org.mockito.stubbing.Answer
+import org.scalatest.BeforeAndAfter
 
 import org.apache.spark.{SparkConf, SparkFunSuite}
+import org.apache.spark.deploy.SparkHadoopUtil
+import org.apache.spark.deploy.kubernetes.HadoopUGIUtil
 import org.apache.spark.deploy.kubernetes.constants._
 import org.apache.spark.util.Utils
 
-
-
-private[spark] class HadoopKerberosKeytabResolverStepSuite extends SparkFunSuite {
+private[spark] class HadoopKerberosKeytabResolverStepSuite
+  extends SparkFunSuite with BeforeAndAfter{
   private val POD_LABEL = Map("bootstrap" -> "true")
   private val DRIVER_CONTAINER_NAME = "driver-container"
   private val TEMP_KEYTAB_FILE = createTempFile("keytab")
   private val KERB_PRINCIPAL = "user@k8s.com"
+  private val SPARK_USER_VALUE = "sparkUser"
+  private var oldCredentials = new Credentials()
+  private val TEST_IDENTIFIER = "identifier"
+  private val TEST_PASSWORD = "password"
+  private val TEST_TOKEN_VALUE = "data"
+  private def getByteArray(input: String) = input.toCharArray.map(_.toByte)
+  private def getStringFromArray(input: Array[Byte]) = new String(input)
+  private val TEST_TOKEN = new Token[AbstractDelegationTokenIdentifier](
+    getByteArray(TEST_IDENTIFIER),
+    getByteArray(TEST_PASSWORD),
+    new Text("kind"),
+    new Text("service"))
+  oldCredentials.addToken(new Text("testToken"), TEST_TOKEN)
+  private val dfs = FileSystem.get(SparkHadoopUtil.get.newConfiguration(new SparkConf()))
+  private val hadoopUGI = new HadoopUGIUtil()
 
-  // TODO: Require mocking of UGI methods
+  @Mock
+  private var hadoopUtil: HadoopUGIUtil = _
+
+  @Mock
+  private var ugi: UserGroupInformation = _
+
+  before {
+    MockitoAnnotations.initMocks(this)
+    when(hadoopUtil.loginUserFromKeytabAndReturnUGI(any[String], any[String]))
+      .thenAnswer(new Answer[UserGroupInformation] {
+      override def answer(invocation: InvocationOnMock): UserGroupInformation = {
+        hadoopUGI.getCurrentUser
+      }
+    })
+    when(hadoopUtil.getCurrentUser).thenReturn(ugi)
+    when(hadoopUtil.getShortName).thenReturn(SPARK_USER_VALUE)
+    when(ugi.getCredentials).thenReturn(oldCredentials)
+  }
+
   test("Testing keytab login") {
+    when(hadoopUtil.isSecurityEnabled).thenReturn(true)
     val keytabStep = new HadoopKerberosKeytabResolverStep(
       new SparkConf(),
       Some(KERB_PRINCIPAL),
-      Some(TEMP_KEYTAB_FILE))
+      Some(TEMP_KEYTAB_FILE),
+      hadoopUtil)
     val hadoopConfSpec = HadoopConfigSpec(
       Map.empty[String, String],
       new PodBuilder()

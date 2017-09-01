@@ -19,7 +19,7 @@ package org.apache.spark.deploy.kubernetes.submit.submitsteps.hadoopsteps
 import java.io.File
 
 import org.apache.spark.SparkConf
-import org.apache.spark.deploy.kubernetes.{HadoopConfBootstrapImpl, OptionRequirements}
+import org.apache.spark.deploy.kubernetes.{HadoopConfBootstrapImpl, HadoopUGIUtil, OptionRequirements}
 import org.apache.spark.deploy.kubernetes.config._
 import org.apache.spark.internal.Logging
 
@@ -39,6 +39,7 @@ private[spark] class HadoopStepsOrchestrator(
    private val maybeExistingSecretItemKey =
      submissionSparkConf.get(KUBERNETES_KERBEROS_DT_SECRET_ITEM_KEY)
    private val hadoopConfigurationFiles = getHadoopConfFiles(hadoopConfDir)
+   private val hadoopUGI = new HadoopUGIUtil
    logInfo(s"Hadoop Conf directory: $hadoopConfDir")
 
    require(maybeKeytab.forall( _ => isKerberosEnabled ),
@@ -64,7 +65,8 @@ private[spark] class HadoopStepsOrchestrator(
   def getHadoopSteps(): Seq[HadoopConfigurationStep] = {
     val hadoopConfBootstrapImpl = new HadoopConfBootstrapImpl(
       hadoopConfigMapName,
-      hadoopConfigurationFiles)
+      hadoopConfigurationFiles,
+      hadoopUGI)
     val hadoopConfMounterStep = new HadoopConfMounterStep(
       hadoopConfigMapName,
       hadoopConfigurationFiles,
@@ -79,7 +81,8 @@ private[spark] class HadoopStepsOrchestrator(
             new HadoopKerberosKeytabResolverStep(
               submissionSparkConf,
               maybePrincipal,
-              maybeKeytab)))
+              maybeKeytab,
+              hadoopUGI)))
       } else {
         Option.empty[HadoopConfigurationStep]
       }
