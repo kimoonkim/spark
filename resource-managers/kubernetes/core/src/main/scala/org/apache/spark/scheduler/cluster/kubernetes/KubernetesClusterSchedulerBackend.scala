@@ -72,14 +72,12 @@ private[spark] class KubernetesClusterSchedulerBackend(
   private val executorsToRemove = Collections.newSetFromMap[String](
     new ConcurrentHashMap[String, java.lang.Boolean]()).asScala
 
-  private val executorExtraJavaOpts = conf.get(
-    org.apache.spark.internal.config.EXECUTOR_JAVA_OPTIONS)
   private val executorExtraClasspath = conf.get(
     org.apache.spark.internal.config.EXECUTOR_CLASS_PATH)
   private val executorJarsDownloadDir = conf.get(INIT_CONTAINER_JARS_DOWNLOAD_LOCATION)
   private val isKerberosEnabled = conf.get(KUBERNETES_KERBEROS_SUPPORT)
   private val maybeSimpleAuthentication =
-    if (isKerberosEnabled) s" -D$HADOOP_SECURITY_AUTHENTICATION=simple" else ""
+    if (isKerberosEnabled) Some(s"-D$HADOOP_SECURITY_AUTHENTICATION=simple") else None
   private val executorLabels = ConfigurationUtils.combinePrefixedKeyValuePairsWithDeprecatedConf(
       conf,
       KUBERNETES_EXECUTOR_LABEL_PREFIX,
@@ -455,12 +453,6 @@ private[spark] class KubernetesClusterSchedulerBackend(
     val executorCpuQuantity = new QuantityBuilder(false)
       .withAmount(executorCores.toString)
       .build()
-    val executorJavaOpts = executorExtraJavaOpts.getOrElse("") + maybeSimpleAuthentication
-    val executorJavaOptsEnv = if (executorJavaOpts.nonEmpty) {
-      Some(new EnvVarBuilder()
-        .withName(ENV_EXECUTOR_JAVA_OPTS)
-        .withValue(executorJavaOpts)
-        .build()) } else None
     val executorExtraClasspathEnv = executorExtraClasspath.map { cp =>
       new EnvVarBuilder()
         .withName(ENV_EXECUTOR_EXTRA_CLASSPATH)
@@ -468,14 +460,14 @@ private[spark] class KubernetesClusterSchedulerBackend(
         .build()
     }
     val executorExtraJavaOptionsEnv = conf
-        .get(org.apache.spark.internal.config.EXECUTOR_JAVA_OPTIONS)
-        .map { opts =>
-          val delimitedOpts = Utils.splitCommandString(opts)
-          delimitedOpts.zipWithIndex.map {
-            case (opt, index) =>
-              new EnvVarBuilder().withName(s"$ENV_JAVA_OPT_PREFIX$index").withValue(opt).build()
-          }
-        }.getOrElse(Seq.empty[EnvVar])
+      .get(org.apache.spark.internal.config.EXECUTOR_JAVA_OPTIONS)
+      .map { opts =>
+        val delimitedOpts = Utils.splitCommandString(opts) ++ maybeSimpleAuthentication
+        delimitedOpts.zipWithIndex.map {
+          case (opt, index) =>
+            new EnvVarBuilder().withName(s"$ENV_JAVA_OPT_PREFIX$index").withValue(opt).build()
+        }
+      }.getOrElse(Seq.empty[EnvVar])
     val executorEnv = (Seq(
       (ENV_EXECUTOR_PORT, executorPort.toString),
       (ENV_DRIVER_URL, driverUrl),
@@ -516,8 +508,6 @@ private[spark] class KubernetesClusterSchedulerBackend(
         .addToLimits("memory", executorMemoryLimitQuantity)
         .addToRequests("cpu", executorCpuQuantity)
       .endResources()
-      .addToEnv(executorExtraClasspathEnv.toSeq: _*)
-      .addToEnv(executorJavaOptsEnv.toSeq: _*)
       .addAllToEnv(executorEnv.asJava)
       .withPorts(requiredPorts.asJava)
       .build()

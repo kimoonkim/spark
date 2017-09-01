@@ -104,5 +104,6 @@ private[spark] class SparkDockerImageBuilder
       name,
       dockerFile,
       new LoggingBuildHandler())
+    logInfo(s"Built docker image for $name")
   }
 }
