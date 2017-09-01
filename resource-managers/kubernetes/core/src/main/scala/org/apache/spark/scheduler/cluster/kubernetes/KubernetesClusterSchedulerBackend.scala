@@ -459,10 +459,14 @@ private[spark] class KubernetesClusterSchedulerBackend(
         .withValue(cp)
         .build()
     }
-    val executorExtraJavaOptionsEnv = conf
-      .get(org.apache.spark.internal.config.EXECUTOR_JAVA_OPTIONS)
-      .map { opts =>
-        val delimitedOpts = Utils.splitCommandString(opts) ++ maybeSimpleAuthentication
+    val executorExtraJavaOptions = (
+        conf.get(org.apache.spark.internal.config.EXECUTOR_JAVA_OPTIONS)
+          ++ maybeSimpleAuthentication).mkString(" ") match {
+        case "" => None
+        case str => Some(str)
+      }
+    val executorExtraJavaOptionsEnv = executorExtraJavaOptions.map { opts =>
+        val delimitedOpts = Utils.splitCommandString(opts)
         delimitedOpts.zipWithIndex.map {
           case (opt, index) =>
             new EnvVarBuilder().withName(s"$ENV_JAVA_OPT_PREFIX$index").withValue(opt).build()

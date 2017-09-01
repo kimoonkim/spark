@@ -72,7 +72,7 @@ private[spark] class KerberosPVWatcherCache(
           .withLabels(labels.asJava)
           .watch(new Watcher[PersistentVolume] {
             override def onClose(cause: KubernetesClientException): Unit =
-              logInfo("Ending the watch of Persistent Volumes")
+              logInfo("Ending the watch of Persistent Volumes", cause)
             override def eventReceived(action: Watcher.Action, resource: PersistentVolume): Unit = {
               val name = resource.getMetadata.getName
               action match {
