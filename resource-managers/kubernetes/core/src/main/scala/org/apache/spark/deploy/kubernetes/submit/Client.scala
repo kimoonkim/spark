@@ -81,7 +81,7 @@ private[spark] class Client(
     org.apache.spark.internal.config.DRIVER_JAVA_OPTIONS)
   private val isKerberosEnabled = submissionSparkConf.get(KUBERNETES_KERBEROS_SUPPORT)
   private val maybeSimpleAuthentication =
-    if (isKerberosEnabled) s"-D$HADOOP_SECURITY_AUTHENTICATION=simple" else ""
+    if (isKerberosEnabled) Some(s"-D$HADOOP_SECURITY_AUTHENTICATION=simple") else None
 
    /**
     * Run command that initalizes a DriverSpec that will be updated after each
@@ -102,7 +102,7 @@ private[spark] class Client(
         .getAll
         .map {
           case (confKey, confValue) => s"-D$confKey=$confValue"
-        } ++ driverJavaOptions.map(Utils.splitCommandString).getOrElse(Seq.empty) :+
+        } ++ driverJavaOptions.map(Utils.splitCommandString).getOrElse(Seq.empty) ++
         maybeSimpleAuthentication
     val driverJavaOptsEnvs: Seq[EnvVar] = resolvedDriverJavaOpts.zipWithIndex.map {
       case (option, index) => new EnvVarBuilder()
