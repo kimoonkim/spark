@@ -21,6 +21,7 @@ import scala.concurrent.duration.Duration
 import akka.actor.ActorSystem
 import org.apache.log4j.{Level, Logger}
 
+
 private class Server {
 
   private val actorSystem = ActorSystem("TokenRefreshServer")

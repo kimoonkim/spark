@@ -21,15 +21,13 @@ import java.util.concurrent.{Executors, ScheduledFuture, ThreadFactory, TimeUnit
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+
 import io.fabric8.kubernetes.api.model.Secret
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.security.{Credentials, UserGroupInformation}
 import org.apache.hadoop.security.token.{Token, TokenIdentifier}
-
-import org.apache.spark.internal.Logging
 import org.apache.spark.security.kubernetes.constants._
 
 private class TokenRefreshService extends Actor with Logging {

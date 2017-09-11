@@ -27,7 +27,6 @@ import io.fabric8.kubernetes.client._
 import io.fabric8.kubernetes.client.Watcher.Action
 import io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.security.kubernetes.constants._
 
 private class SecretFinder(renewService: ActorRef,
