@@ -23,6 +23,7 @@ import scala.collection.JavaConverters._
 
 import com.google.common.io.Files
 import io.fabric8.kubernetes.api.model._
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.io.Text
 import org.apache.hadoop.security.Credentials
@@ -30,7 +31,7 @@ import org.apache.hadoop.security.UserGroupInformation
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier
 import org.apache.hadoop.security.token.Token
 import org.mockito.{Mock, MockitoAnnotations}
-import org.mockito.Matchers.any
+import org.mockito.Matchers.{any, anyString}
 import org.mockito.Mockito.when
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
@@ -80,6 +81,9 @@ private[spark] class HadoopKerberosKeytabResolverStepSuite
     })
     when(hadoopUtil.getCurrentUser).thenReturn(ugi)
     when(hadoopUtil.getShortName).thenReturn(SPARK_USER_VALUE)
+    val tokens = Array(TEST_TOKEN)
+    when(hadoopUtil.dfsAddDelegationToken(any[Configuration](), anyString(), any[Credentials]()))
+      .thenReturn(tokens)
     when(ugi.getCredentials).thenReturn(oldCredentials)
   }
 
