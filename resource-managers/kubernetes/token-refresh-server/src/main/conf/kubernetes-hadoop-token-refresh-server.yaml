@@ -26,6 +26,7 @@ spec:
       labels:
         hadoop-token-refresh-server-instance: default
     spec:
+      serviceAccountName: YOUR-SERVICE-ACCOUT
       volumes:
         - name: kerberos-config
           configMap:
@@ -35,17 +36,17 @@ spec:
             name: hadoop-token-refresh-server-hadoop-config
         - name: kerberos-keytab
           secret:
-            name: hadoop-token-refresh-server-kerberos-keytab
+            secretName: hadoop-token-refresh-server-kerberos-keytab
       containers:
         - name: hadoop-token-refresh-server
-          image: docker:5000/hadoop-token-refresh-server:kimoon-0821-1
+          image: YOUR-REPO:YOUR-TAG
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: 100m
-              memory: 256Mi
+              memory: 512Mi
           volumeMounts:
             - name: kerberos-config
               mountPath: '/etc/krb5.conf'
@@ -54,7 +55,7 @@ spec:
             - name: hadoop-config
               mountPath: '/etc/hadoop/conf'
               readOnly: true
-            - name: kereros-keytab
+            - name: kerberos-keytab
               mountPath: '/mnt/secrets/krb5.keytab'
               subPath: krb5.keytab
               readOnly: true

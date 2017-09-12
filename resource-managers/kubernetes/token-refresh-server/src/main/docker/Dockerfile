@@ -15,11 +15,27 @@
 # limitations under the License.
 #
 
-FROM spark-base
+FROM openjdk:8-alpine
 
 
-# If this docker file is being used in the context of building your images from a Spark distribution, the docker build
-# command should be invoked from the top level directory of the Spark distribution. E.g.:
-# docker build -t spark-hadoop-token-refresh-server:latest -f dockerfiles/hadoop-token-refresh-server/Dockerfile .
+RUN apk upgrade --no-cache &&  \
+    apk add --no-cache bash tini &&  \
+    rm /bin/sh &&  \
+    ln -sv /bin/bash /bin/sh &&  \
+    chgrp root /etc/passwd  &&  \
+    chmod ug+rw /etc/passwd &&  \
+    mkdir -p /opt/token-refresh-server &&  \
+    mkdir -p /opt/token-refresh-server/jars &&  \
+    mkdir -p /opt/token-refresh-server/work-dir 
 
-ENTRYPOINT [ "/sbin/tini", "--", "bin/spark-class", "org.apache.spark.security.kubernetes.TokenRefreshServer" ]
+ADD target/token-refresh-server-kubernetes_2.11-2.2.0-k8s-0.3.0-SNAPSHOT-bin.jar  \
+    /opt/token-refresh-server/jars
+WORKDIR /opt/token-refresh-server/work-dir
+
+# The docker build command should be invoked from the top level directory of
+# the token-refresh-server project. E.g.:
+# docker build -t hadoop-token-refresh-server:latest  \
+#     -f src/main/docker/Dockerfile .
+
+CMD /sbin/tini -s -- /usr/bin/java -cp '/opt/token-refresh-server/jars/*'  \
+    org.apache.spark.security.kubernetes.TokenRefreshServer
