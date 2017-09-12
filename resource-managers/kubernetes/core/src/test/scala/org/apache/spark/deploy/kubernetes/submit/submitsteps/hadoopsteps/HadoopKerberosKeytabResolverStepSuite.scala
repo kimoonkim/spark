@@ -20,7 +20,6 @@ import java.io.File
 import java.util.UUID
 
 import scala.collection.JavaConverters._
-
 import com.google.common.io.Files
 import io.fabric8.kubernetes.api.model._
 import org.apache.hadoop.conf.Configuration
@@ -29,14 +28,13 @@ import org.apache.hadoop.io.Text
 import org.apache.hadoop.security.Credentials
 import org.apache.hadoop.security.UserGroupInformation
 import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier
-import org.apache.hadoop.security.token.Token
+import org.apache.hadoop.security.token.{Token, TokenIdentifier}
 import org.mockito.{Mock, MockitoAnnotations}
 import org.mockito.Matchers.{any, anyString}
 import org.mockito.Mockito.when
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 import org.scalatest.BeforeAndAfter
-
 import org.apache.spark.{SparkConf, SparkFunSuite}
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.deploy.kubernetes.HadoopUGIUtil
@@ -71,6 +69,9 @@ private[spark] class HadoopKerberosKeytabResolverStepSuite
   @Mock
   private var ugi: UserGroupInformation = _
 
+  @Mock
+  private var credentials: Credentials = _
+
   before {
     MockitoAnnotations.initMocks(this)
     when(hadoopUtil.loginUserFromKeytabAndReturnUGI(any[String], any[String]))
@@ -81,10 +82,11 @@ private[spark] class HadoopKerberosKeytabResolverStepSuite
     })
     when(hadoopUtil.getCurrentUser).thenReturn(ugi)
     when(hadoopUtil.getShortName).thenReturn(SPARK_USER_VALUE)
-    val tokens = Array(TEST_TOKEN)
     when(hadoopUtil.dfsAddDelegationToken(any[Configuration](), anyString(), any[Credentials]()))
-      .thenReturn(tokens)
+      .thenReturn(Array(TEST_TOKEN))
     when(ugi.getCredentials).thenReturn(oldCredentials)
+    val tokens = List[Token[_ <: TokenIdentifier]](TEST_TOKEN).asJavaCollection
+    when(credentials.getAllTokens).thenReturn(tokens)
   }
 
   test("Testing keytab login") {
