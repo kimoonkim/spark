@@ -26,7 +26,7 @@ spec:
       labels:
         hadoop-token-refresh-server-instance: default
     spec:
-      serviceAccountName: YOUR-SERVICE-ACCOUT
+      serviceAccountName: YOUR-SERVICE-ACCOUNT
       volumes:
         - name: kerberos-config
           configMap:
@@ -40,6 +40,11 @@ spec:
       containers:
         - name: hadoop-token-refresh-server
           image: YOUR-REPO:YOUR-TAG
+          env:
+            - name: HADOOP_CONF_DIR
+              value: /etc/hadoop/conf
+            - name: TOKEN_REFRESH_SERVER_ARGS
+              value: --verbose
           resources:
             requests:
               cpu: 100m

@@ -21,6 +21,8 @@ import scala.concurrent.duration.Duration
 import akka.actor.ActorSystem
 import org.apache.log4j.{Level, Logger}
 
+import scala.annotation.tailrec
+
 
 private class Server {
 
@@ -46,8 +48,27 @@ private class Server {
 
 object TokenRefreshServer {
 
+  private class Arguments(args: List[String]) {
+
+    var logLevel: Level = Level.WARN
+
+    parse(args)
+
+    @tailrec
+    private def parse(args: List[String]): Unit = args match {
+      case ("--verbose" | "-v") :: tail =>
+        logLevel = Level.INFO
+        parse(tail)
+      case ("--debug" | "-d") :: tail =>
+        logLevel = Level.DEBUG
+        parse(tail)
+      case _ =>
+    }
+  }
+
   def main(args: Array[String]): Unit = {
-    Logger.getRootLogger.setLevel(Level.INFO)
+    val parsedArgs = new Arguments(args.toList)
+    Logger.getRootLogger.setLevel(parsedArgs.logLevel)
     val server = new Server
     try {
       server.start()
