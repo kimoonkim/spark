@@ -43,11 +43,17 @@ private class TokenRefreshService extends Actor with Logging {
   private val clock = new Clock
 
   override def receive: PartialFunction[Any, Unit] = {
+    case Relogin => launchReloginTask()
     case StartRefresh(secret) => addStarterTask(secret)
     case StopRefresh(secret) => removeRefreshTask(secret)
     case UpdateRefreshList(secrets) => updateRefreshTaskSet(secrets)
     case renew @ Renew(nextExpireTime, expireTimeByToken, secret, _) => scheduleRenewTask(renew)
     case _ =>
+  }
+
+  private def launchReloginTask() = {
+    val task = new ReloginTask
+    scheduler.scheduleOnce(Duration(0L, TimeUnit.MILLISECONDS), task)
   }
 
   private def addStarterTask(secret: Secret) = {
@@ -61,7 +67,7 @@ private class TokenRefreshService extends Actor with Logging {
     })
   }
 
-  private def removeRefreshTask(secret: Secret) = {
+  private def removeRefreshTask(secret: Secret) : Unit = {
     val uid = getSecretUid(secret)
     taskHandleBySecret.remove(uid).foreach(cancellable => {
       logInfo(s"Canceling refresh of tokens in ${secret.getMetadata.getSelfLink}")
@@ -69,7 +75,7 @@ private class TokenRefreshService extends Actor with Logging {
     })
   }
 
-  private def updateRefreshTaskSet(currentSecrets: List[Secret]) = {
+  private def updateRefreshTaskSet(currentSecrets: List[Secret]) : Unit = {
     val secretByUid = currentSecrets.map(secret => (getSecretUid(secret), secret)).toMap
     val currentUids = secretByUid.keySet
     val priorUids = taskHandleBySecret.keySet
@@ -103,6 +109,13 @@ private class TokenRefreshService extends Actor with Logging {
   }
 
   private def getSecretUid(secret: Secret) = secret.getMetadata.getUid
+}
+
+private class ReloginTask extends Runnable {
+
+  override def run() : Unit = {
+    UserGroupInformation.getLoginUser.checkTGTAndReloginFromKeytab()
+  }
 }
 
 private class StarterTask(secret: Secret,
@@ -215,13 +228,15 @@ private class Clock {
   def nowInMillis() : Long = System.currentTimeMillis()
 }
 
-private case class UpdateRefreshList(secrets: List[Secret])
-private case class StartRefresh(secret: Secret)
+private sealed trait Command
+private case object Relogin extends Command
+private case class UpdateRefreshList(secrets: List[Secret]) extends Command
+private case class StartRefresh(secret: Secret) extends Command
 private case class Renew(expireTime: Long,
                          expireTimeByToken: Map[Token[_ <: TokenIdentifier], Long],
                          secret: Secret,
-                         numConsecutiveErrors: Int)
-private case class StopRefresh(secret: Secret)
+                         numConsecutiveErrors: Int) extends Command
+private case class StopRefresh(secret: Secret) extends Command
 
 private object TokenRefreshService {
 
@@ -229,6 +244,9 @@ private object TokenRefreshService {
     UserGroupInformation.loginUserFromKeytab(
       REFRESH_SERVER_KERBEROS_PRINCIPAL,
       REFRESH_SERVER_KERBEROS_KEYTAB_PATH)
-    system.actorOf(Props[TokenRefreshService])
+    val actor = system.actorOf(Props[TokenRefreshService])
+    val duration = Duration(REFRESH_SERVER_KERBEROS_RELOGIN_PERIOD_MILLIS, TimeUnit.MILLISECONDS)
+    system.scheduler.schedule(duration, duration, actor, Relogin)
+    actor
   }
 }
