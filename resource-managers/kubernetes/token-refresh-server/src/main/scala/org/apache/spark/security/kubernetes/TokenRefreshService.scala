@@ -17,24 +17,28 @@
 package org.apache.spark.security.kubernetes
 
 import java.io.{ByteArrayInputStream, DataInputStream}
-import java.util.concurrent.{Executors, ScheduledFuture, ThreadFactory, TimeUnit}
+import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import scala.concurrent.duration.Duration
+import scala.concurrent.ExecutionContext.Implicits.global
 
+import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
 import io.fabric8.kubernetes.api.model.Secret
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.security.{Credentials, UserGroupInformation}
 import org.apache.hadoop.security.token.{Token, TokenIdentifier}
+
 import org.apache.spark.security.kubernetes.constants._
+
 
 private class TokenRefreshService extends Actor with Logging {
 
-  private val scheduler = newScheduler()
+  private val scheduler = context.system.scheduler
   // Keyed by secret UID.
-  private val taskHandleBySecret = mutable.HashMap[String, ScheduledFuture[_]]()
+  private val taskHandleBySecret = mutable.HashMap[String, Cancellable]()
   private val hadoopConf = new Configuration
   private val clock = new Clock
 
@@ -46,30 +50,22 @@ private class TokenRefreshService extends Actor with Logging {
     case _ =>
   }
 
-  private def newScheduler() = Executors.newScheduledThreadPool(REFERSH_TASKS_NUM_THREADS,
-    new ThreadFactory {
-      override def newThread(r: Runnable): Thread = {
-        val thread = new Thread(r, REFRESH_TASK_THREAD_NAME)
-        thread.setDaemon(true)
-        thread
-      }
-    })
-
   private def addStarterTask(secret: Secret) = {
     taskHandleBySecret.getOrElseUpdate(getSecretUid(secret), {
       val task = new StarterTask(secret, hadoopConf, self, clock)
-      val future = scheduler.schedule(task, REFRESH_STARTER_TASK_INITIAL_DELAY_MILLIS,
-        TimeUnit.MILLISECONDS)
-      logInfo(s"Started refresh of tokens in ${secret.getMetadata.getSelfLink} with ${future}")
-      future
+      val cancellable = scheduler.scheduleOnce(
+        Duration(REFRESH_STARTER_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS),
+        task)
+      logInfo(s"Started refresh of tokens in ${secret.getMetadata.getSelfLink} with ${cancellable}")
+      cancellable
     })
   }
 
   private def removeRefreshTask(secret: Secret) = {
     val uid = getSecretUid(secret)
-    taskHandleBySecret.remove(uid).foreach(future => {
+    taskHandleBySecret.remove(uid).foreach(cancellable => {
       logInfo(s"Canceling refresh of tokens in ${secret.getMetadata.getSelfLink}")
-      future.cancel(true) // Interrupt if running.
+      cancellable.cancel()
     })
   }
 
@@ -93,11 +89,12 @@ private class TokenRefreshService extends Actor with Logging {
         val task = new RenewTask(renew, hadoopConf, self, clock)
         logInfo(s"Scheduling refresh of tokens with " +
           s"${renew.secret.getMetadata.getSelfLink} at now + $renewTime millis.")
-        taskHandleBySecret.put(uid, scheduler.schedule(task, renewTime, TimeUnit.MILLISECONDS))
+        val cancellable = scheduler.scheduleOnce(Duration(renewTime, TimeUnit.MILLISECONDS), task)
+        taskHandleBySecret.put(uid, cancellable)
       } else {
         logWarning(s"Got too many errors for ${renew.secret.getMetadata.getSelfLink}. Abandoning.")
-        val future = taskHandleBySecret.remove(uid)
-        future.foreach(_.cancel(true))  // Interrupt if running.
+        val maybeCancellable = taskHandleBySecret.remove(uid)
+        maybeCancellable.foreach(_.cancel())
       }
     } else {
       logWarning(s"Could not find an entry for renew task" +
