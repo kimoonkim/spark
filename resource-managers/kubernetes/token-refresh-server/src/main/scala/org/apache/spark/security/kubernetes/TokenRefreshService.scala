@@ -90,12 +90,14 @@ private class TokenRefreshService extends Actor with Logging {
     if (taskHandleBySecret.get(uid).nonEmpty) {
       val numConsecutiveErrors = renew.numConsecutiveErrors
       if (numConsecutiveErrors < RENEW_TASK_MAX_CONSECUTIVE_ERRORS) {
-        val renewTime = math.max(0L,
-          renew.expireTime - RENEW_TASK_SCHEDULE_AHEAD_MILLIS - clock.nowInMillis())
+        val durationTillExpire = math.max(0L, renew.expireTime - clock.nowInMillis())
+        val renewTime = math.max(0L, renew.expireTime - durationTillExpire / 10)  // 90% mark.
+        val durationTillRenew = math.max(0L, renewTime - clock.nowInMillis())
         val task = new RenewTask(renew, hadoopConf, self, clock)
         logInfo(s"Scheduling refresh of tokens with " +
-          s"${renew.secret.getMetadata.getSelfLink} at now + $renewTime millis.")
-        val cancellable = scheduler.scheduleOnce(Duration(renewTime, TimeUnit.MILLISECONDS), task)
+          s"${renew.secret.getMetadata.getSelfLink} at now + $durationTillRenew millis.")
+        val cancellable = scheduler.scheduleOnce(
+          Duration(durationTillRenew, TimeUnit.MILLISECONDS), task)
         taskHandleBySecret.put(uid, cancellable)
       } else {
         logWarning(s"Got too many errors for ${renew.secret.getMetadata.getSelfLink}. Abandoning.")
@@ -175,7 +177,7 @@ private class StarterTask(secret: Secret,
     }).toMap
   }
 
-  private def getRetryTime() = clock.nowInMillis() + RENEW_TASK_DEADLINE_LOOK_AHEAD_MILLIS
+  private def getRetryTime() = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
 }
 
 private class RenewTask(renew: Renew,
@@ -220,7 +222,7 @@ private class RenewTask(renew: Renew,
     }
   }
 
-  private def getRetryTime() = clock.nowInMillis() + RENEW_TASK_DEADLINE_LOOK_AHEAD_MILLIS
+  private def getRetryTime() = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
 }
 
 private class Clock {
