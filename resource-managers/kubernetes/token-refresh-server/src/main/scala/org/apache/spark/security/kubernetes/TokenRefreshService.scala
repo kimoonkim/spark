@@ -128,15 +128,14 @@ private class StarterTask(secret: Secret,
   private var hasError = false
 
   override def run() : Unit = {
-    val tokens = readHadoopTokens()
-    logInfo(s"Read Hadoop tokens: $tokens")
-    val expireTimeByToken = renewTokens(tokens)
+    val expireTimeByToken = readHadoopTokens()
+    logInfo(s"Read Hadoop tokens: $expireTimeByToken")
     val nextExpireTime = if (expireTimeByToken.nonEmpty) {
       expireTimeByToken.values.min
     } else {
       logWarning(s"Got an empty token list with ${secret.getMetadata.getSelfLink}")
       hasError = true
-      getRetryTime()
+      getRetryTime
     }
     logInfo(s"Initial renew resulted with $expireTimeByToken. Next expire time $nextExpireTime")
     val numConsecutiveErrors = if (hasError) 1 else 0
@@ -146,38 +145,24 @@ private class StarterTask(secret: Secret,
   private def readHadoopTokens() = {
     val hadoopSecretData = secret.getData.asScala.filterKeys(
       _.startsWith(SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS))
-    val latestData = if (hadoopSecretData.nonEmpty) Some(hadoopSecretData.max._2) else None
-    val credentials = latestData.map {
-      data =>
+    val latestData = if (hadoopSecretData.nonEmpty) Some(hadoopSecretData.max) else None
+    val tokens = latestData.map {
+      item =>
+        val key = item._1
+        val data = item._2
+        val createTimeAndDuration = key.split(SECRET_DATA_KEY_REGEX_HADOOP_TOKENS, 2)
+        val expireTime = createTimeAndDuration(0).toLong + createTimeAndDuration(1).toLong
         val creds = new Credentials
         creds.readTokenStorageStream(new DataInputStream(new ByteArrayInputStream(
           Base64.decodeBase64(data))))
-        creds
-    }
-    val tokens = credentials.map {
-      creds =>
-        creds.getAllTokens.asScala.toList
-    }
-    tokens.getOrElse(Nil)
-  }
-
-  private def renewTokens(tokens: List[Token[_ <: TokenIdentifier]])
-      : Map[Token[_ <: TokenIdentifier], Long] = {
-    tokens.map(token => {
-      val expireTime = try {
-          token.renew(hadoopConf)
-        } catch {
-          case t: Throwable =>
-            logWarning(t.getMessage, t)
-            hasError = true
-
-          getRetryTime()
+        creds.getAllTokens.asScala.toList.map {
+          (_, expireTime)
         }
-      (token, expireTime)
-    }).toMap
+    }
+    tokens.getOrElse(Nil).toMap
   }
 
-  private def getRetryTime() = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
+  private def getRetryTime = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
 }
 
 private class RenewTask(renew: Renew,
@@ -203,7 +188,7 @@ private class RenewTask(renew: Renew,
                   logWarning(t.getMessage, t)
                   hasError = true
 
-                getRetryTime()
+                getRetryTime
               }
             } else {
               expireTime
@@ -222,7 +207,7 @@ private class RenewTask(renew: Renew,
     }
   }
 
-  private def getRetryTime() = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
+  private def getRetryTime = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
 }
 
 private class Clock {
