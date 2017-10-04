@@ -149,9 +149,7 @@ private class StarterTask(secret: Secret,
       _.startsWith(SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS))
     val latestData = if (hadoopSecretData.nonEmpty) Some(hadoopSecretData.max) else None
     latestData.map {
-      item =>
-        val key = item._1
-        val data = item._2
+      case (key, data) =>
         val createTimeAndDuration = key.split(SECRET_DATA_KEY_REGEX_HADOOP_TOKENS, 2)
         val expireTime = createTimeAndDuration(0).toLong + createTimeAndDuration(1).toLong
         val creds = new Credentials
@@ -178,9 +176,7 @@ private class RenewTask(renew: Renew,
     val nowMillis = clock.nowInMillis()
     val newExpireTimeByToken : Map[Token[_ <: TokenIdentifier], Long] =
       renew.tokenToExpireTime.map {
-        item =>
-          val token = item._1
-          val expireTime = item._2
+        case (token, expireTime) =>
           val (maybeNewToken, maybeNewExpireTime) = refresh(token, expireTime, deadline, nowMillis)
           (maybeNewToken, maybeNewExpireTime)
       }
@@ -198,16 +194,18 @@ private class RenewTask(renew: Renew,
 
   private def refresh(token: Token[_ <: TokenIdentifier], expireTime: Long, deadline: Long,
                       nowMillis: Long) = {
-    val maybeNewToken = maybeObtainNewToken(token, expireTime)
+    val maybeNewToken = maybeObtainNewToken(token, expireTime, nowMillis)
     val maybeNewExpireTime = maybeRenewExpireTime(maybeNewToken, expireTime, deadline, nowMillis)
-    (token, maybeNewExpireTime)
+    (maybeNewToken, maybeNewExpireTime)
   }
 
-  private def maybeObtainNewToken(token: Token[_ <: TokenIdentifier], expireTime: Long) = {
+  private def maybeObtainNewToken(token: Token[_ <: TokenIdentifier], expireTime: Long,
+                                  nowMills: Long) = {
     val maybeNewToken = if (token.getKind.equals(DelegationTokenIdentifier.HDFS_DELEGATION_KIND)) {
       val identifier = token.decodeIdentifier().asInstanceOf[AbstractDelegationTokenIdentifier]
       val maxDate = identifier.getMaxDate
-      if (maxDate - expireTime < RENEW_TASK_REMAINING_TIME_BEFORE_NEW_TOKEN_MILLIS) {
+      if (maxDate - expireTime < RENEW_TASK_REMAINING_TIME_BEFORE_NEW_TOKEN_MILLIS ||
+        maxDate <= nowMills) {
         val newToken = obtainNewToken(token, identifier)
         logInfo(s"Obtained token $newToken")
         newToken
