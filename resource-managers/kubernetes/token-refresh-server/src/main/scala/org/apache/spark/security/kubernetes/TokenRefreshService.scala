@@ -16,7 +16,7 @@
  */
 package org.apache.spark.security.kubernetes
 
-import java.io.{ByteArrayInputStream, DataInputStream}
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 import java.security.{PrivilegedActionException, PrivilegedExceptionAction}
 import java.util.concurrent.TimeUnit
 
@@ -25,7 +25,7 @@ import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
-import io.fabric8.kubernetes.api.model.Secret
+import io.fabric8.kubernetes.api.model.{Secret, SecretBuilder}
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
@@ -130,7 +130,7 @@ private class StarterTask(secret: Secret,
   private var hasError = false
 
   override def run() : Unit = {
-    val tokenToExpireTime = readHadoopTokens()
+    val tokenToExpireTime = readTokensFromSecret()
     logInfo(s"Read Hadoop tokens: $tokenToExpireTime")
     val nextExpireTime = if (tokenToExpireTime.nonEmpty) {
       tokenToExpireTime.values.min
@@ -144,7 +144,7 @@ private class StarterTask(secret: Secret,
     refreshService ! Renew(nextExpireTime, tokenToExpireTime, secret, numConsecutiveErrors)
   }
 
-  private def readHadoopTokens() : Map[Token[_ <: TokenIdentifier], Long] = {
+  private def readTokensFromSecret() : Map[Token[_ <: TokenIdentifier], Long] = {
     val hadoopSecretData = secret.getData.asScala.filterKeys(
       _.startsWith(SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS))
     val latestData = if (hadoopSecretData.nonEmpty) Some(hadoopSecretData.max) else None
@@ -182,6 +182,8 @@ private class RenewTask(renew: Renew,
       }
       .toMap
     if (newExpireTimeByToken.nonEmpty) {
+      val newTokens = newExpireTimeByToken.keySet -- renew.tokenToExpireTime.keySet
+      if (newTokens.nonEmpty) writeTokensToSecret(newExpireTimeByToken, nowMillis)
       val nextExpireTime = newExpireTimeByToken.values.min
       logInfo(s"Renewed with the result $newExpireTimeByToken. Next expire time $nextExpireTime")
       val numConsecutiveErrors = if (hasError) renew.numConsecutiveErrors + 1 else 0
@@ -258,6 +260,30 @@ private class RenewTask(renew: Renew,
       }
     })
     newToken
+  }
+
+  private def writeTokensToSecret(tokenToExpire: Map[Token[_ <: TokenIdentifier], Long],
+                                  nowMillis: Long) = {
+    val durationUntilExpire = tokenToExpire.values.min - nowMillis
+    val key = s"$SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS$nowMillis-$durationUntilExpire"
+    val credentials = new Credentials()
+    tokenToExpire.keys.foreach(token => credentials.addToken(token.getService, token))
+    val serialized = serializeCredentials(credentials)
+    val value = Base64.encodeBase64String(serialized)
+    val builder = new SecretBuilder(renew.secret)
+        .addToData(key, value)
+    val hadoopSecretData = builder.getData.asScala.filterKeys(
+      _.startsWith(SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS))
+    hadoopSecretData.keys.dropRight(2).foreach(builder.removeFromData)
+    builder.build()
+  }
+
+  private def serializeCredentials(credentials: Credentials) = {
+    val byteStream = new ByteArrayOutputStream
+    val dataStream = new DataOutputStream(byteStream)
+    credentials.writeTokenStorageToStream(dataStream)
+    dataStream.flush()
+    byteStream.toByteArray
   }
 
   private def getRetryTime = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
