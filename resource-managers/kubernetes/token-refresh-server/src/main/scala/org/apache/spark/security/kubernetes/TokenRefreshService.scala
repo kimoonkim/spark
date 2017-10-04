@@ -17,20 +17,22 @@
 package org.apache.spark.security.kubernetes
 
 import java.io.{ByteArrayInputStream, DataInputStream}
+import java.security.{PrivilegedActionException, PrivilegedExceptionAction}
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
-
 import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
 import io.fabric8.kubernetes.api.model.Secret
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.hdfs.security.token.delegation.DelegationTokenIdentifier
+import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier
 import org.apache.hadoop.security.{Credentials, UserGroupInformation}
 import org.apache.hadoop.security.token.{Token, TokenIdentifier}
-
 import org.apache.spark.security.kubernetes.constants._
 
 
@@ -60,7 +62,7 @@ private class TokenRefreshService extends Actor with Logging {
     taskHandleBySecret.getOrElseUpdate(getSecretUid(secret), {
       val task = new StarterTask(secret, hadoopConf, self, clock)
       val cancellable = scheduler.scheduleOnce(
-        Duration(REFRESH_STARTER_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS),
+        Duration(STARTER_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS),
         task)
       logInfo(s"Started refresh of tokens in ${secret.getMetadata.getSelfLink} with ${cancellable}")
       cancellable
@@ -128,18 +130,18 @@ private class StarterTask(secret: Secret,
   private var hasError = false
 
   override def run() : Unit = {
-    val expireTimeByToken = readHadoopTokens()
-    logInfo(s"Read Hadoop tokens: $expireTimeByToken")
-    val nextExpireTime = if (expireTimeByToken.nonEmpty) {
-      expireTimeByToken.values.min
+    val tokenToExpireTime = readHadoopTokens()
+    logInfo(s"Read Hadoop tokens: $tokenToExpireTime")
+    val nextExpireTime = if (tokenToExpireTime.nonEmpty) {
+      tokenToExpireTime.values.min
     } else {
       logWarning(s"Got an empty token list with ${secret.getMetadata.getSelfLink}")
       hasError = true
       getRetryTime
     }
-    logInfo(s"Initial renew resulted with $expireTimeByToken. Next expire time $nextExpireTime")
+    logInfo(s"Initial renew resulted with $tokenToExpireTime. Next expire time $nextExpireTime")
     val numConsecutiveErrors = if (hasError) 1 else 0
-    refreshService ! Renew(nextExpireTime, expireTimeByToken, secret, numConsecutiveErrors)
+    refreshService ! Renew(nextExpireTime, tokenToExpireTime, secret, numConsecutiveErrors)
   }
 
   private def readHadoopTokens() : Map[Token[_ <: TokenIdentifier], Long] = {
@@ -173,26 +175,14 @@ private class RenewTask(renew: Renew,
 
   override def run() : Unit = {
     val deadline = renew.expireTime + RENEW_TASK_DEADLINE_LOOK_AHEAD_MILLIS
+    val nowMillis = clock.nowInMillis()
     val newExpireTimeByToken : Map[Token[_ <: TokenIdentifier], Long] =
-      renew.expireTimeByToken.map {
+      renew.tokenToExpireTime.map {
         item =>
           val token = item._1
           val expireTime = item._2
-          val newExpireTime =
-            if (expireTime <= deadline) {
-              try {
-                token.renew(hadoopConf)
-              } catch {
-                case t: Throwable =>
-                  logWarning(t.getMessage, t)
-                  hasError = true
-
-                getRetryTime
-              }
-            } else {
-              expireTime
-            }
-          (token, newExpireTime)
+          val (maybeNewToken, maybeNewExpireTime) = refresh(token, expireTime, deadline, nowMillis)
+          (maybeNewToken, maybeNewExpireTime)
       }
       .toMap
     if (newExpireTimeByToken.nonEmpty) {
@@ -204,6 +194,72 @@ private class RenewTask(renew: Renew,
     } else {
       logWarning(s"Got an empty token list with ${renew.secret.getMetadata.getSelfLink}")
     }
+  }
+
+  private def refresh(token: Token[_ <: TokenIdentifier], expireTime: Long, deadline: Long,
+                      nowMillis: Long) = {
+    val maybeNewToken = maybeObtainNewToken(token, expireTime)
+    val maybeNewExpireTime = maybeRenewExpireTime(maybeNewToken, expireTime, deadline, nowMillis)
+    (token, maybeNewExpireTime)
+  }
+
+  private def maybeObtainNewToken(token: Token[_ <: TokenIdentifier], expireTime: Long) = {
+    val maybeNewToken = if (token.getKind.equals(DelegationTokenIdentifier.HDFS_DELEGATION_KIND)) {
+      val identifier = token.decodeIdentifier().asInstanceOf[AbstractDelegationTokenIdentifier]
+      val maxDate = identifier.getMaxDate
+      if (maxDate - expireTime < RENEW_TASK_REMAINING_TIME_BEFORE_NEW_TOKEN_MILLIS) {
+        val newToken = obtainNewToken(token, identifier)
+        logInfo(s"Obtained token $newToken")
+        newToken
+      } else {
+        token
+      }
+    } else {
+      token
+    }
+    maybeNewToken
+  }
+
+  private def maybeRenewExpireTime(token: Token[_ <: TokenIdentifier], expireTime: Long,
+                                   deadline: Long, nowMillis: Long) = {
+    if (expireTime <= deadline || expireTime <= nowMillis) {
+      try {
+        val newExpireTime = token.renew(hadoopConf)
+        logInfo(s"Renewed token $token. Next expire time $newExpireTime")
+        newExpireTime
+      } catch {
+        case t: Throwable =>
+          logWarning(t.getMessage, t)
+          hasError = true
+
+          getRetryTime
+      }
+    } else {
+      expireTime
+    }
+  }
+
+  private def obtainNewToken(token: Token[_ <: TokenIdentifier],
+                             identifier: AbstractDelegationTokenIdentifier) = {
+    val owner = identifier.getOwner
+    val realUser = identifier.getRealUser
+    val user = if (realUser == null || realUser.toString.isEmpty || realUser.equals(owner)) {
+      owner.toString
+    } else {
+      realUser.toString
+    }
+    val credentials = new Credentials()
+    val ugi = UserGroupInformation.createProxyUser(user, UserGroupInformation.getLoginUser)
+    val newToken = ugi.doAs(new PrivilegedExceptionAction[Token[_ <: TokenIdentifier]] {
+
+      override def run() : Token[_ <: TokenIdentifier] = {
+        val fs = FileSystem.get(hadoopConf)
+        val tokens = fs.addDelegationTokens(UserGroupInformation.getLoginUser.getUserName,
+          credentials)
+        tokens(0)
+      }
+    })
+    newToken
   }
 
   private def getRetryTime = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
@@ -219,7 +275,7 @@ private case object Relogin extends Command
 private case class UpdateRefreshList(secrets: List[Secret]) extends Command
 private case class StartRefresh(secret: Secret) extends Command
 private case class Renew(expireTime: Long,
-                         expireTimeByToken: Map[Token[_ <: TokenIdentifier], Long],
+                         tokenToExpireTime: Map[Token[_ <: TokenIdentifier], Long],
                          secret: Secret,
                          numConsecutiveErrors: Int) extends Command
 private case class StopRefresh(secret: Secret) extends Command
