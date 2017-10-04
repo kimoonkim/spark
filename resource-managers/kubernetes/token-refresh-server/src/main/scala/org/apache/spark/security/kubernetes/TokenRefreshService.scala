@@ -142,11 +142,11 @@ private class StarterTask(secret: Secret,
     refreshService ! Renew(nextExpireTime, expireTimeByToken, secret, numConsecutiveErrors)
   }
 
-  private def readHadoopTokens() = {
+  private def readHadoopTokens() : Map[Token[_ <: TokenIdentifier], Long] = {
     val hadoopSecretData = secret.getData.asScala.filterKeys(
       _.startsWith(SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS))
     val latestData = if (hadoopSecretData.nonEmpty) Some(hadoopSecretData.max) else None
-    val tokens = latestData.map {
+    latestData.map {
       item =>
         val key = item._1
         val data = item._2
@@ -158,8 +158,7 @@ private class StarterTask(secret: Secret,
         creds.getAllTokens.asScala.toList.map {
           (_, expireTime)
         }
-    }
-    tokens.getOrElse(Nil).toMap
+    }.toList.flatten.toMap
   }
 
   private def getRetryTime = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
