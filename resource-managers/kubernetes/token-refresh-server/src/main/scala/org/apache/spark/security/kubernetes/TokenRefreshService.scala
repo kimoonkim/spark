@@ -21,11 +21,12 @@ import java.security.PrivilegedExceptionAction
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable
+import scala.collection.{SortedSet, mutable}
 import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
 import io.fabric8.kubernetes.api.model.{Secret, SecretBuilder}
+import io.fabric8.kubernetes.client.KubernetesClient
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
@@ -36,7 +37,7 @@ import org.apache.hadoop.security.token.{Token, TokenIdentifier}
 import org.apache.spark.security.kubernetes.constants._
 
 
-private class TokenRefreshService extends Actor with Logging {
+private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Actor with Logging {
 
   private val scheduler = context.system.scheduler
   private val secretUidToTaskHandle = mutable.HashMap[String, Cancellable]()
@@ -100,7 +101,7 @@ private class TokenRefreshService extends Actor with Logging {
         val durationTillExpire = math.max(0L, renew.expireTime - clock.nowInMillis())
         val renewTime = math.max(0L, renew.expireTime - durationTillExpire / 10)  // 90% mark.
         val durationTillRenew = math.max(0L, renewTime - clock.nowInMillis())
-        val task = new RenewTask(renew, hadoopConf, self, clock)
+        val task = new RenewTask(renew, hadoopConf, self, kubernetesClient, clock)
         logInfo(s"Scheduling refresh of tokens with " +
           s"${renew.secret.getMetadata.getSelfLink} at now + $durationTillRenew millis.")
         val cancellable = scheduler.scheduleOnce(
@@ -150,12 +151,12 @@ private class StarterTask(secret: Secret,
   }
 
   private def readTokensFromSecret() : Map[Token[_ <: TokenIdentifier], Long] = {
-    val hadoopSecretData = secret.getData.asScala.filterKeys(
-      _.startsWith(SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS))
-    val latestData = if (hadoopSecretData.nonEmpty) Some(hadoopSecretData.max) else None
-    latestData.map {
+    val dataItems = secret.getData.asScala.filterKeys(
+      _.startsWith(SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS)).toSeq.sorted
+    val latestDataItem = if (dataItems.nonEmpty) Some(dataItems.max) else None
+    latestDataItem.map {
       case (key, data) =>
-        val createTimeAndDuration = key.split(SECRET_DATA_KEY_REGEX_HADOOP_TOKENS, 2)
+        val createTimeAndDuration = key.split(SECRET_DATA_ITEM_KEY_REGEX_HADOOP_TOKENS, 2)
         val expireTime = createTimeAndDuration(0).toLong + createTimeAndDuration(1).toLong
         val creds = new Credentials
         creds.readTokenStorageStream(new DataInputStream(new ByteArrayInputStream(
@@ -172,6 +173,7 @@ private class StarterTask(secret: Secret,
 private class RenewTask(renew: Renew,
                         hadoopConf: Configuration,
                         refreshService: ActorRef,
+                        kubernetesClient: KubernetesClient,
                         clock: Clock) extends Runnable with Logging {
 
   private var hasError = false
@@ -270,17 +272,21 @@ private class RenewTask(renew: Renew,
   private def writeTokensToSecret(tokenToExpire: Map[Token[_ <: TokenIdentifier], Long],
                                   nowMillis: Long) = {
     val durationUntilExpire = tokenToExpire.values.min - nowMillis
-    val key = s"$SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS$nowMillis-$durationUntilExpire"
+    val key = s"$SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS$nowMillis-$durationUntilExpire"
     val credentials = new Credentials()
     tokenToExpire.keys.foreach(token => credentials.addToken(token.getService, token))
     val serialized = serializeCredentials(credentials)
     val value = Base64.encodeBase64String(serialized)
-    val builder = new SecretBuilder(renew.secret)
-        .addToData(key, value)
-    val hadoopSecretData = builder.getData.asScala.filterKeys(
-      _.startsWith(SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS))
-    hadoopSecretData.keys.dropRight(2).foreach(builder.removeFromData)
-    builder.build()
+    val secret = renew.secret
+    val editor = kubernetesClient.secrets
+      .inNamespace(secret.getMetadata.getNamespace)
+      .withName(secret.getMetadata.getName)
+      .edit()
+    editor.addToData(key, value)
+    val dataItemKeys = editor.getData.keySet().asScala.filter(
+      _.startsWith(SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS)).toSeq.sorted
+    dataItemKeys.dropRight(2).foreach(editor.removeFromData)
+    editor.done
   }
 
   private def serializeCredentials(credentials: Credentials) = {
@@ -311,11 +317,11 @@ private case class StopRefresh(secret: Secret) extends Command
 
 private object TokenRefreshService {
 
-  def apply(system: ActorSystem) : ActorRef = {
+  def apply(system: ActorSystem, kubernetesClient: KubernetesClient) : ActorRef = {
     UserGroupInformation.loginUserFromKeytab(
       REFRESH_SERVER_KERBEROS_PRINCIPAL,
       REFRESH_SERVER_KERBEROS_KEYTAB_PATH)
-    val actor = system.actorOf(Props[TokenRefreshService])
+    val actor = system.actorOf(Props(classOf[TokenRefreshService], kubernetesClient))
     val duration = Duration(REFRESH_SERVER_KERBEROS_RELOGIN_PERIOD_MILLIS, TimeUnit.MILLISECONDS)
     system.scheduler.schedule(duration, duration, actor, Relogin)
     actor

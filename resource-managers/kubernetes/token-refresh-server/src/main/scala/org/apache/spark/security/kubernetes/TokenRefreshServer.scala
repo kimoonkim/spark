@@ -19,6 +19,7 @@ package org.apache.spark.security.kubernetes
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import akka.actor.ActorSystem
+import io.fabric8.kubernetes.client.DefaultKubernetesClient
 import org.apache.log4j.{Level, Logger}
 
 import scala.annotation.tailrec
@@ -27,11 +28,12 @@ import scala.annotation.tailrec
 private class Server {
 
   private val actorSystem = ActorSystem("TokenRefreshServer")
+  private val kubernetesClient = new DefaultKubernetesClient
   private var secretFinder : Option[SecretFinder] = None
 
   def start(): Unit = {
-    val renewService = TokenRefreshService(actorSystem)
-    secretFinder = Some(SecretFinder(renewService))
+    val renewService = TokenRefreshService(actorSystem, kubernetesClient)
+    secretFinder = Some(SecretFinder(renewService, kubernetesClient))
   }
 
   def join() : Unit = {

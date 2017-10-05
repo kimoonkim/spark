@@ -24,8 +24,8 @@ package object constants {
 
   val SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS = "refresh-hadoop-tokens"
   val SECRET_LABEL_VALUE_REFRESH_HADOOP_TOKENS = "yes"
-  val SECRET_DATA_KEY_PREFIX_HADOOP_TOKENS = "hadoop-tokens-"
-  val SECRET_DATA_KEY_REGEX_HADOOP_TOKENS = "hadoop-tokens-(\\d+)-(\\d+)"
+  val SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS = "hadoop-tokens-"
+  val SECRET_DATA_ITEM_KEY_REGEX_HADOOP_TOKENS = "hadoop-tokens-(\\d+)-(\\d+)"
 
   val STARTER_TASK_INITIAL_DELAY_MILLIS = 0L
 

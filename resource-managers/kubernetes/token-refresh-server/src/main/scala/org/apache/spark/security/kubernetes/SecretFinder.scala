@@ -74,10 +74,10 @@ private class SecretWatcher(renewService: ActorRef) extends Watcher[Secret] with
 
 private object SecretFinder {
 
-  def apply(renewService: ActorRef) : SecretFinder = {
+  def apply(renewService: ActorRef, kubernetesClient: KubernetesClient) : SecretFinder = {
     new SecretFinder(renewService,
       new Timer(SECRET_SCANNER_THREAD_NAME, IS_DAEMON_THREAD),
-      new DefaultKubernetesClient)
+      kubernetesClient)
   }
 
   def selectSecrets(kubernetesClient: KubernetesClient):
