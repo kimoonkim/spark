@@ -285,6 +285,7 @@ private class RenewTask(renew: Renew,
     editor.addToData(key, value)
     val dataItemKeys = editor.getData.keySet().asScala.filter(
       _.startsWith(SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS)).toSeq.sorted
+    // Remove data items except the latest two data items.
     dataItemKeys.dropRight(2).foreach(editor.removeFromData)
     editor.done
   }
