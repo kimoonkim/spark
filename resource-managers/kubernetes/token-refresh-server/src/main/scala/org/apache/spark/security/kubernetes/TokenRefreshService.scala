@@ -17,7 +17,7 @@
 package org.apache.spark.security.kubernetes
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
-import java.security.{PrivilegedActionException, PrivilegedExceptionAction}
+import java.security.PrivilegedExceptionAction
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
@@ -39,18 +39,22 @@ import org.apache.spark.security.kubernetes.constants._
 private class TokenRefreshService extends Actor with Logging {
 
   private val scheduler = context.system.scheduler
-  // Keyed by secret UID.
-  private val taskHandleBySecret = mutable.HashMap[String, Cancellable]()
+  private val secretUidToTaskHandle = mutable.HashMap[String, Cancellable]()
+  private val recentlyAddedSecretUids = mutable.HashSet[String]()
   private val hadoopConf = new Configuration
   private val clock = new Clock
 
   override def receive: PartialFunction[Any, Unit] = {
-    case Relogin => launchReloginTask()
-    case StartRefresh(secret) => addStarterTask(secret)
-    case StopRefresh(secret) => removeRefreshTask(secret)
-    case UpdateRefreshList(secrets) => updateRefreshTaskSet(secrets)
-    case renew @ Renew(nextExpireTime, expireTimeByToken, secret, _) => scheduleRenewTask(renew)
-    case _ =>
+    case Relogin =>
+      launchReloginTask()
+    case StartRefresh(secret) =>
+      addStarterTask(secret)
+    case StopRefresh(secret) =>
+      removeRefreshTask(secret)
+    case UpdateSecretsToTrack(secrets) =>
+      updateSecretsToTrack(secrets)
+    case renew: Renew =>
+      scheduleRenewTask(renew)
   }
 
   private def launchReloginTask() = {
@@ -59,7 +63,7 @@ private class TokenRefreshService extends Actor with Logging {
   }
 
   private def addStarterTask(secret: Secret) = {
-    taskHandleBySecret.getOrElseUpdate(getSecretUid(secret), {
+    secretUidToTaskHandle.getOrElseUpdate(getSecretUid(secret), {
       val task = new StarterTask(secret, hadoopConf, self, clock)
       val cancellable = scheduler.scheduleOnce(
         Duration(STARTER_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS),
@@ -71,25 +75,26 @@ private class TokenRefreshService extends Actor with Logging {
 
   private def removeRefreshTask(secret: Secret) : Unit = {
     val uid = getSecretUid(secret)
-    taskHandleBySecret.remove(uid).foreach(cancellable => {
+    secretUidToTaskHandle.remove(uid).foreach(cancellable => {
       logInfo(s"Canceling refresh of tokens in ${secret.getMetadata.getSelfLink}")
       cancellable.cancel()
     })
   }
 
-  private def updateRefreshTaskSet(currentSecrets: List[Secret]) : Unit = {
+  private def updateSecretsToTrack(currentSecrets: List[Secret]) : Unit = {
     val secretByUid = currentSecrets.map(secret => (getSecretUid(secret), secret)).toMap
     val currentUids = secretByUid.keySet
-    val priorUids = taskHandleBySecret.keySet
+    val priorUids = secretUidToTaskHandle.keySet
     val uidsToAdd = currentUids -- priorUids
     uidsToAdd.foreach(uid => addStarterTask(secretByUid(uid)))
-    val uidsToRemove = priorUids -- currentUids
+    val uidsToRemove = priorUids -- currentUids -- recentlyAddedSecretUids
     uidsToRemove.foreach(uid => removeRefreshTask(secretByUid(uid)))
+    recentlyAddedSecretUids.clear()
   }
 
   private def scheduleRenewTask(renew: Renew) = {
     val uid = getSecretUid(renew.secret)
-    if (taskHandleBySecret.get(uid).nonEmpty) {
+    if (secretUidToTaskHandle.get(uid).nonEmpty) {
       val numConsecutiveErrors = renew.numConsecutiveErrors
       if (numConsecutiveErrors < RENEW_TASK_MAX_CONSECUTIVE_ERRORS) {
         val durationTillExpire = math.max(0L, renew.expireTime - clock.nowInMillis())
@@ -100,10 +105,10 @@ private class TokenRefreshService extends Actor with Logging {
           s"${renew.secret.getMetadata.getSelfLink} at now + $durationTillRenew millis.")
         val cancellable = scheduler.scheduleOnce(
           Duration(durationTillRenew, TimeUnit.MILLISECONDS), task)
-        taskHandleBySecret.put(uid, cancellable)
+        secretUidToTaskHandle.put(uid, cancellable)
       } else {
         logWarning(s"Got too many errors for ${renew.secret.getMetadata.getSelfLink}. Abandoning.")
-        val maybeCancellable = taskHandleBySecret.remove(uid)
+        val maybeCancellable = secretUidToTaskHandle.remove(uid)
         maybeCancellable.foreach(_.cancel())
       }
     } else {
@@ -296,7 +301,7 @@ private class Clock {
 
 private sealed trait Command
 private case object Relogin extends Command
-private case class UpdateRefreshList(secrets: List[Secret]) extends Command
+private case class UpdateSecretsToTrack(secrets: List[Secret]) extends Command
 private case class StartRefresh(secret: Secret) extends Command
 private case class Renew(expireTime: Long,
                          tokenToExpireTime: Map[Token[_ <: TokenIdentifier], Long],

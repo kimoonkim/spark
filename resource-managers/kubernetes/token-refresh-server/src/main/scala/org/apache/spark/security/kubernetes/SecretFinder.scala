@@ -50,7 +50,7 @@ private class SecretScanner(renewService: ActorRef,
   override def run(): Unit = {
     val secrets = SecretFinder.selectSecrets(kubernetesClient).list.getItems.asScala.toList
     logInfo(s"Scanned ${secrets.map(_.getMetadata.getSelfLink).mkString}")
-    renewService ! UpdateRefreshList(secrets)
+    renewService ! UpdateSecretsToTrack(secrets)
   }
 }
 
@@ -68,7 +68,7 @@ private class SecretWatcher(renewService: ActorRef) extends Watcher[Secret] with
   }
 
   override def onClose(cause: KubernetesClientException): Unit = {
-    // FIXME. TBD.
+    // Do nothing
   }
 }
 
