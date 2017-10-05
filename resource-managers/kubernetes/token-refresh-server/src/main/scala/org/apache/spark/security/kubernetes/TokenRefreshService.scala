@@ -59,6 +59,11 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
       scheduleRenewTask(renew)
   }
 
+  override def postStop(): Unit = {
+    super.postStop()
+    secretUidToTaskHandle.values.map(_.cancel)
+  }
+
   private def launchReloginTask() = {
     val task = new ReloginTask
     scheduler.scheduleOnce(Duration(0L, TimeUnit.MILLISECONDS), task)
@@ -195,9 +200,11 @@ private class RenewTask(renew: Renew,
       .toMap
     if (newExpireTimeByToken.nonEmpty) {
       val newTokens = newExpireTimeByToken.keySet -- renew.tokenToExpireTime.keySet
-      if (newTokens.nonEmpty) writeTokensToSecret(newExpireTimeByToken, nowMillis)
+      if (newTokens.nonEmpty) {
+        writeTokensToSecret(newExpireTimeByToken, nowMillis)
+      }
       val nextExpireTime = newExpireTimeByToken.values.min
-      logInfo(s"Renewed with the result $newExpireTimeByToken. Next expire time $nextExpireTime")
+      logInfo(s"Renewed tokens $newExpireTimeByToken. Next expire time $nextExpireTime")
       val numConsecutiveErrors = if (hasError) renew.numConsecutiveErrors + 1 else 0
       refreshService ! Renew(nextExpireTime, newExpireTimeByToken, renew.secretMeta,
         numConsecutiveErrors)
@@ -220,7 +227,8 @@ private class RenewTask(renew: Renew,
       val maxDate = identifier.getMaxDate
       if (maxDate - expireTime < RENEW_TASK_REMAINING_TIME_BEFORE_NEW_TOKEN_MILLIS ||
         maxDate <= nowMills) {
-        logInfo(s"Obtaining a new token")
+        logDebug(s"Obtaining a new token with maxData $maxDate," +
+          s" expireTime $expireTime, now $nowMills")
         val newToken = obtainNewToken(token, identifier)
         logInfo(s"Obtained token $newToken")
         newToken
@@ -237,8 +245,10 @@ private class RenewTask(renew: Renew,
                                    deadline: Long, nowMillis: Long) = {
     if (expireTime <= deadline || expireTime <= nowMillis) {
       try {
+        logDebug(s"Renewing token $token with current expire time $expireTime," +
+          s" deadline $deadline, now $nowMillis")
         val newExpireTime = token.renew(hadoopConf)
-        logInfo(s"Renewed token $token. Next expire time $newExpireTime")
+        logDebug(s"Renewed token $token. Next expire time $newExpireTime")
         newExpireTime
       } catch {
         case t: Throwable =>
@@ -276,7 +286,7 @@ private class RenewTask(renew: Renew,
   }
 
   private def writeTokensToSecret(tokenToExpire: Map[Token[_ <: TokenIdentifier], Long],
-                                  nowMillis: Long) = {
+                                  nowMillis: Long) : Unit = {
     val durationUntilExpire = tokenToExpire.values.min - nowMillis
     val key = s"$SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS$nowMillis-$durationUntilExpire"
     val credentials = new Credentials()
@@ -294,6 +304,7 @@ private class RenewTask(renew: Renew,
     // Remove data items except the latest two data items.
     dataItemKeys.dropRight(2).foreach(editor.removeFromData)
     editor.done
+    logInfo(s"Wrote new tokens $tokenToExpire to a data item $key in ${secretMeta.getSelfLink}")
   }
 
   private def serializeCredentials(credentials: Credentials) = {

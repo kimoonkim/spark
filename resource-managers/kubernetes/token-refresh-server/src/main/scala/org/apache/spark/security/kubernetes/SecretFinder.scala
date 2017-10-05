@@ -64,6 +64,7 @@ private class SecretWatcher(renewService: ActorRef) extends Watcher[Secret] with
       case Action.DELETED =>
         logInfo(s"Found ${secret.getMetadata.getSelfLink} deleted")
         renewService ! StopRefresh(secret)
+      case _ =>  // Do nothing
     }
   }
 

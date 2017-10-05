@@ -15,18 +15,18 @@
   ~ limitations under the License.
   -->
 <assembly>
-  <id>bin</id>
+  <id>assembly</id>
   <formats>
-    <format>jar</format>
+    <format>tar.gz</format>
   </formats>
   <includeBaseDirectory>false</includeBaseDirectory>
   <dependencySets>
     <dependencySet>
-      <unpack>true</unpack>
+      <unpack>false</unpack>
       <scope>compile</scope>
     </dependencySet>
     <dependencySet>
-      <unpack>true</unpack>
+      <unpack>false</unpack>
       <scope>provided</scope>
     </dependencySet>
   </dependencySets>

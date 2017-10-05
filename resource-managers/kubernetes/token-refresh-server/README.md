@@ -14,10 +14,10 @@ To build the refresh server jar, simply run Maven. For example:
 
     mvn clean package
 
-The target directory will have a uber jar that includes the project class files as well as
-3rd party classes from the dependencies. The jar name would end with `-bin.jar`. For example:
+The target directory will have a tarball that includes the project jar file as well as
+3rd party dependency jars. The tarball name would end with `-assembly.tar.gz`. For example:
 
-    target/token-refresh-server-kubernetes_2.11-2.2.0-k8s-0.3.0-SNAPSHOT-bin.jar
+    target/token-refresh-server-kubernetes_2.11-2.2.0-k8s-0.3.0-SNAPSHOT-assembly.tar.gz
 
 # Running the Refresh Server
 
