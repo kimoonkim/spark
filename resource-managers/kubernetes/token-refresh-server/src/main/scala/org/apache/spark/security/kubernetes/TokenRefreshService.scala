@@ -19,6 +19,7 @@ package org.apache.spark.security.kubernetes
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 import java.security.PrivilegedExceptionAction
 import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -145,7 +146,6 @@ private class StarterTask(secret: Secret,
       hasError = true
       getRetryTime
     }
-    logInfo(s"Initial renew resulted with $tokenToExpireTime. Next expire time $nextExpireTime")
     val numConsecutiveErrors = if (hasError) 1 else 0
     refreshService ! Renew(nextExpireTime, tokenToExpireTime, secret.getMetadata,
       numConsecutiveErrors)
@@ -157,8 +157,12 @@ private class StarterTask(secret: Secret,
     val latestDataItem = if (dataItems.nonEmpty) Some(dataItems.max) else None
     latestDataItem.map {
       case (key, data) =>
-        val createTimeAndDuration = key.split(SECRET_DATA_ITEM_KEY_REGEX_HADOOP_TOKENS, 2)
-        val expireTime = createTimeAndDuration(0).toLong + createTimeAndDuration(1).toLong
+        val matcher = TokenRefreshService.hadoopTokenPattern.matcher(key)
+        val matches = matcher.matches()
+        logInfo(s"Matching secret data $key, result $matches")
+        val createTime = matcher.group(1).toLong
+        val duration = matcher.group(2).toLong
+        val expireTime = createTime + duration
         val creds = new Credentials
         creds.readTokenStorageStream(new DataInputStream(new ByteArrayInputStream(
           Base64.decodeBase64(data))))
@@ -216,6 +220,7 @@ private class RenewTask(renew: Renew,
       val maxDate = identifier.getMaxDate
       if (maxDate - expireTime < RENEW_TASK_REMAINING_TIME_BEFORE_NEW_TOKEN_MILLIS ||
         maxDate <= nowMills) {
+        logInfo(s"Obtaining a new token")
         val newToken = obtainNewToken(token, identifier)
         logInfo(s"Obtained token $newToken")
         newToken
@@ -318,6 +323,8 @@ private case class Renew(expireTime: Long,
 private case class StopRefresh(secret: Secret) extends Command
 
 private object TokenRefreshService {
+
+  val hadoopTokenPattern = Pattern.compile(SECRET_DATA_ITEM_KEY_REGEX_HADOOP_TOKENS)
 
   def apply(system: ActorSystem, kubernetesClient: KubernetesClient) : ActorRef = {
     UserGroupInformation.loginUserFromKeytab(
