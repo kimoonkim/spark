@@ -21,11 +21,11 @@ import java.security.PrivilegedExceptionAction
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
-import scala.collection.{SortedSet, mutable}
+import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
-import io.fabric8.kubernetes.api.model.{Secret, SecretBuilder}
+import io.fabric8.kubernetes.api.model.{ObjectMeta, Secret}
 import io.fabric8.kubernetes.client.KubernetesClient
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
@@ -64,18 +64,18 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
   }
 
   private def addStarterTask(secret: Secret) = {
-    secretUidToTaskHandle.getOrElseUpdate(getSecretUid(secret), {
+    secretUidToTaskHandle.getOrElseUpdate(getSecretUid(secret.getMetadata), {
       val task = new StarterTask(secret, hadoopConf, self, clock)
       val cancellable = scheduler.scheduleOnce(
         Duration(STARTER_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS),
         task)
-      logInfo(s"Started refresh of tokens in ${secret.getMetadata.getSelfLink} with ${cancellable}")
+      logInfo(s"Started refresh of tokens in ${secret.getMetadata.getSelfLink} with $cancellable")
       cancellable
     })
   }
 
   private def removeRefreshTask(secret: Secret) : Unit = {
-    val uid = getSecretUid(secret)
+    val uid = getSecretUid(secret.getMetadata)
     secretUidToTaskHandle.remove(uid).foreach(cancellable => {
       logInfo(s"Canceling refresh of tokens in ${secret.getMetadata.getSelfLink}")
       cancellable.cancel()
@@ -83,7 +83,7 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
   }
 
   private def updateSecretsToTrack(currentSecrets: List[Secret]) : Unit = {
-    val secretByUid = currentSecrets.map(secret => (getSecretUid(secret), secret)).toMap
+    val secretByUid = currentSecrets.map(secret => (getSecretUid(secret.getMetadata), secret)).toMap
     val currentUids = secretByUid.keySet
     val priorUids = secretUidToTaskHandle.keySet
     val uidsToAdd = currentUids -- priorUids
@@ -94,7 +94,7 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
   }
 
   private def scheduleRenewTask(renew: Renew) = {
-    val uid = getSecretUid(renew.secret)
+    val uid = getSecretUid(renew.secretMeta)
     if (secretUidToTaskHandle.get(uid).nonEmpty) {
       val numConsecutiveErrors = renew.numConsecutiveErrors
       if (numConsecutiveErrors < RENEW_TASK_MAX_CONSECUTIVE_ERRORS) {
@@ -103,22 +103,22 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
         val durationTillRenew = math.max(0L, renewTime - clock.nowInMillis())
         val task = new RenewTask(renew, hadoopConf, self, kubernetesClient, clock)
         logInfo(s"Scheduling refresh of tokens with " +
-          s"${renew.secret.getMetadata.getSelfLink} at now + $durationTillRenew millis.")
+          s"${renew.secretMeta.getSelfLink} at now + $durationTillRenew millis.")
         val cancellable = scheduler.scheduleOnce(
           Duration(durationTillRenew, TimeUnit.MILLISECONDS), task)
         secretUidToTaskHandle.put(uid, cancellable)
       } else {
-        logWarning(s"Got too many errors for ${renew.secret.getMetadata.getSelfLink}. Abandoning.")
+        logWarning(s"Got too many errors for ${renew.secretMeta.getSelfLink}. Abandoning.")
         val maybeCancellable = secretUidToTaskHandle.remove(uid)
         maybeCancellable.foreach(_.cancel())
       }
     } else {
       logWarning(s"Could not find an entry for renew task" +
-        s" ${renew.secret.getMetadata.getSelfLink}. Maybe the secret got deleted")
+        s" ${renew.secretMeta.getSelfLink}. Maybe the secret got deleted")
     }
   }
 
-  private def getSecretUid(secret: Secret) = secret.getMetadata.getUid
+  private def getSecretUid(secret: ObjectMeta) = secret.getUid
 }
 
 private class ReloginTask extends Runnable {
@@ -147,7 +147,8 @@ private class StarterTask(secret: Secret,
     }
     logInfo(s"Initial renew resulted with $tokenToExpireTime. Next expire time $nextExpireTime")
     val numConsecutiveErrors = if (hasError) 1 else 0
-    refreshService ! Renew(nextExpireTime, tokenToExpireTime, secret, numConsecutiveErrors)
+    refreshService ! Renew(nextExpireTime, tokenToExpireTime, secret.getMetadata,
+      numConsecutiveErrors)
   }
 
   private def readTokensFromSecret() : Map[Token[_ <: TokenIdentifier], Long] = {
@@ -194,10 +195,10 @@ private class RenewTask(renew: Renew,
       val nextExpireTime = newExpireTimeByToken.values.min
       logInfo(s"Renewed with the result $newExpireTimeByToken. Next expire time $nextExpireTime")
       val numConsecutiveErrors = if (hasError) renew.numConsecutiveErrors + 1 else 0
-      refreshService ! Renew(nextExpireTime, newExpireTimeByToken, renew.secret,
+      refreshService ! Renew(nextExpireTime, newExpireTimeByToken, renew.secretMeta,
         numConsecutiveErrors)
     } else {
-      logWarning(s"Got an empty token list with ${renew.secret.getMetadata.getSelfLink}")
+      logWarning(s"Got an empty token list with ${renew.secretMeta.getSelfLink}")
     }
   }
 
@@ -277,10 +278,10 @@ private class RenewTask(renew: Renew,
     tokenToExpire.keys.foreach(token => credentials.addToken(token.getService, token))
     val serialized = serializeCredentials(credentials)
     val value = Base64.encodeBase64String(serialized)
-    val secret = renew.secret
+    val secretMeta = renew.secretMeta
     val editor = kubernetesClient.secrets
-      .inNamespace(secret.getMetadata.getNamespace)
-      .withName(secret.getMetadata.getName)
+      .inNamespace(secretMeta.getNamespace)
+      .withName(secretMeta.getName)
       .edit()
     editor.addToData(key, value)
     val dataItemKeys = editor.getData.keySet().asScala.filter(
@@ -312,7 +313,7 @@ private case class UpdateSecretsToTrack(secrets: List[Secret]) extends Command
 private case class StartRefresh(secret: Secret) extends Command
 private case class Renew(expireTime: Long,
                          tokenToExpireTime: Map[Token[_ <: TokenIdentifier], Long],
-                         secret: Secret,
+                         secretMeta: ObjectMeta,
                          numConsecutiveErrors: Int) extends Command
 private case class StopRefresh(secret: Secret) extends Command
 
