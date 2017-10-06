@@ -50,7 +50,7 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
     case Relogin =>
       launchReloginTask()
     case StartRefresh(secret) =>
-      startRefresh(secret)
+      startRefreshTask(secret)
     case StopRefresh(secret) =>
       removeRefreshTask(secret)
     case UpdateSecretsToTrack(secrets) =>
@@ -69,7 +69,7 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
     scheduler.scheduleOnce(Duration(0L, TimeUnit.MILLISECONDS), task)
   }
 
-  private def startRefresh(secret: Secret) = {
+  private def startRefreshTask(secret: Secret) = {
     recentlyAddedSecretUids.add(getSecretUid(secret.getMetadata))
     addRefreshTask(secret)
   }
