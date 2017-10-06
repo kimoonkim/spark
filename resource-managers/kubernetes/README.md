@@ -34,7 +34,8 @@ Below is a list of the submodules for this cluster manager and what they do.
 
 * `core`: Implementation of the Kubernetes cluster manager support.
 * `token-refresh-server`: Extra Kubernetes service that refreshes Hadoop
-  tokens for long-running Spark jobs accessing secure data source like HDFS.
+  tokens for long-running Spark jobs accessing secure data sources like
+  Kerberized HDFS.
 * `integration-tests`: Integration tests for the project.
 * `docker-minimal-bundle`: Base Dockerfiles for the driver and the executors. The Dockerfiles are used for integration
   tests as well as being provided in packaged distributions of Spark.
