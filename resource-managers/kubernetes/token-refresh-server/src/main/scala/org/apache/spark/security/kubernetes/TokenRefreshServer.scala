@@ -48,6 +48,9 @@ private class Server {
   }
 }
 
+/*
+ * TODO: Support REST endpoint for checking status of tokens.
+ */
 object TokenRefreshServer {
 
   private class Arguments(args: List[String]) {
