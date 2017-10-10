@@ -18,7 +18,6 @@ package org.apache.spark.security.kubernetes
 
 package object constants {
 
-  val REFRESH_SERVER_KERBEROS_PRINCIPAL = "kimoonkim"
   val REFRESH_SERVER_KERBEROS_KEYTAB_PATH = "/mnt/secrets/krb5.keytab"
   val REFRESH_SERVER_KERBEROS_RELOGIN_PERIOD_MILLIS = 60 * 60 * 1000L
 

@@ -83,9 +83,14 @@ private object SecretFinder {
 
   def selectSecrets(kubernetesClient: KubernetesClient):
           FilterWatchListDeletable[Secret, SecretList, lang.Boolean, Watch, Watcher[Secret]] = {
-    kubernetesClient
+    val selector = kubernetesClient
       .secrets()
-      .inAnyNamespace()
+    val namespacedSelector = if (Settings.shouldScanAllNamespaces) {
+      selector.inAnyNamespace()
+    } else {
+      selector.inNamespace(Settings.namespaceToScan)
+    }
+    namespacedSelector
       .withLabel(SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS, SECRET_LABEL_VALUE_REFRESH_HADOOP_TOKENS)
   }
 }

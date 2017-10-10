@@ -25,7 +25,9 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
+
 import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
+import com.typesafe.config.Config
 import io.fabric8.kubernetes.api.model.{ObjectMeta, Secret}
 import io.fabric8.kubernetes.client.KubernetesClient
 import org.apache.commons.codec.binary.Base64
@@ -347,11 +349,11 @@ private case class StopRefresh(secret: Secret) extends Command
 
 private object TokenRefreshService {
 
-  val hadoopTokenPattern = Pattern.compile(SECRET_DATA_ITEM_KEY_REGEX_HADOOP_TOKENS)
+  val hadoopTokenPattern : Pattern = Pattern.compile(SECRET_DATA_ITEM_KEY_REGEX_HADOOP_TOKENS)
 
   def apply(system: ActorSystem, kubernetesClient: KubernetesClient) : ActorRef = {
     UserGroupInformation.loginUserFromKeytab(
-      REFRESH_SERVER_KERBEROS_PRINCIPAL,
+      Settings.refreshServerKerberosPrincipal,
       REFRESH_SERVER_KERBEROS_KEYTAB_PATH)
     val actor = system.actorOf(Props(classOf[TokenRefreshService], kubernetesClient))
     val duration = Duration(REFRESH_SERVER_KERBEROS_RELOGIN_PERIOD_MILLIS, TimeUnit.MILLISECONDS)

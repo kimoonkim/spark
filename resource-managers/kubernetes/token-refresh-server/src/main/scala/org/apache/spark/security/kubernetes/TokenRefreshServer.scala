@@ -16,14 +16,15 @@
  */
 package org.apache.spark.security.kubernetes
 
+import scala.annotation.tailrec
+import scala.collection.JavaConversions._
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
+
 import akka.actor.ActorSystem
+import com.typesafe.config.{Config, ConfigFactory}
 import io.fabric8.kubernetes.client.DefaultKubernetesClient
 import org.apache.log4j.{Level, Logger}
-
-import scala.annotation.tailrec
-
 
 private class Server {
 
@@ -32,6 +33,7 @@ private class Server {
   private var secretFinder : Option[SecretFinder] = None
 
   def start(): Unit = {
+    val config = ConfigFactory.load
     val renewService = TokenRefreshService(actorSystem, kubernetesClient)
     secretFinder = Some(SecretFinder(renewService, kubernetesClient))
   }
@@ -46,6 +48,20 @@ private class Server {
     actorSystem.terminate()
     secretFinder.foreach(_.stop())
   }
+}
+
+private object Settings {
+
+  private val config: Config = ConfigFactory.load
+
+  private val configKeyPrefix = "hadoop-token-refresh-server"
+
+  val refreshServerKerberosPrincipal : String = config.getString(
+    s"$configKeyPrefix.kerberosPrincipal")
+
+  val shouldScanAllNamespaces : Boolean = config.getBoolean(s"$configKeyPrefix.scanAllNamespaces")
+
+  val namespaceToScan : String = config.getString(s"s$configKeyPrefix.namespaceToScan")
 }
 
 /*

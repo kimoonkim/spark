@@ -38,6 +38,6 @@ WORKDIR /opt/token-refresh-server/work-dir
 #     -f src/main/docker/Dockerfile .
 
 CMD /sbin/tini -s -- /usr/bin/java  \
-    -cp $HADOOP_CONF_DIR:'/opt/token-refresh-server/jars/*'  \
+    -cp $APPLICATION_CONF_DIR:$HADOOP_CONF_DIR:'/opt/token-refresh-server/jars/*'  \
     org.apache.spark.security.kubernetes.TokenRefreshServer  \
     $TOKEN_REFRESH_SERVER_ARGS

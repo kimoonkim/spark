@@ -28,6 +28,9 @@ spec:
     spec:
       serviceAccountName: YOUR-SERVICE-ACCOUNT
       volumes:
+        - name: application-conf
+          configMap:
+            name: hadoop-token-refresh-server-application-conf
         - name: kerberos-config
           configMap:
             name: hadoop-token-refresh-server-kerberos-config
@@ -41,6 +44,8 @@ spec:
         - name: hadoop-token-refresh-server
           image: YOUR-REPO:YOUR-TAG
           env:
+            - name: APPLICATION_CONF_DIR
+              value: /etc/token-refresh-server/conf
             - name: HADOOP_CONF_DIR
               value: /etc/hadoop/conf
             - name: TOKEN_REFRESH_SERVER_ARGS
@@ -53,12 +58,15 @@ spec:
               cpu: 100m
               memory: 512Mi
           volumeMounts:
-            - name: kerberos-config
-              mountPath: '/etc/krb5.conf'
-              subPath: krb5.conf
+            - name: application-conf
+              mountPath: '/etc/token-refreh-server/conf
               readOnly: true
             - name: hadoop-config
               mountPath: '/etc/hadoop/conf'
+              readOnly: true
+            - name: kerberos-config
+              mountPath: '/etc/krb5.conf'
+              subPath: krb5.conf
               readOnly: true
             - name: kerberos-keytab
               mountPath: '/mnt/secrets/krb5.keytab'

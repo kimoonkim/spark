@@ -30,31 +30,38 @@ To run the server, follow the steps below.
     docker tag hadoop-token-refresh-server:latest <YOUR-REPO>:<YOUR-TAG>
     docker push <YOUR-REPO>:<YOUR-TAG>
 
-2. Create a k8s `configmap` containing Hadoop config files. This should enable Kerberos and secure Hadoop.
+2. Edit the main application config file, src/main/conf/application.conf
+   and create a `configmap`:
+
+    kubectl create configmap hadoop-token-refresh-server-application-conf  \
+        --from-file=src/main/conf/application.conf
+
+3. Create another k8s `configmap` containing Hadoop config files. This should enable Kerberos and secure Hadoop.
    It should also include the Hadoop servers that would issue delegation tokens such as the HDFS namenode
    address:
 
     kubectl create configmap hadoop-token-refresh-server-hadoop-config  \
         --from-file=/usr/local/hadoop/conf/core-site.xml
 
-3. Create another k8s `configmap` containing Kerberos config files. This should include
+4. Create yet another k8s `configmap` containing Kerberos config files. This should include
    the kerberos server address and the correct realm name for Kerberos principals:
 
     kubectl create configmap hadoop-token-refresh-server-kerberos-config  \
         --from-file=/etc/krb5.conf
 
-4. Create a k8s `secret` containing the Kerberos keytab file. The keytab file should include
+5. Create a k8s `secret` containing the Kerberos keytab file. The keytab file should include
    the password for the system user Kerberos principal that the refresh server is using to
-   extend Hadoop delegation tokens.
+   extend Hadoop delegation tokens. See
+   hadoop-token-refresh-server.kerberosPrincipal in the application.conf.
 
     kubectl create secret generic hadoop-token-refresh-server-kerberos-keytab  \
         --from-file /mnt/secrets/krb5.keytab
 
-5. Optionally, create a k8s `service account` and `clusterrolebinding` that
+6. Optionally, create a k8s `service account` and `clusterrolebinding` that
    the service pod will use. The service account should have `edit` capability for
    job `secret`s that contains the Hadoop delegation tokens.
 
-6. Finally, edit the config file for k8s `deployment` and launch the service pod
+7. Finally, edit the config file for k8s `deployment` and launch the service pod
    using the deployment. The config file should include the right docker image tag
    and the correct k8s `service account` name.
 
