@@ -50,9 +50,9 @@ To run the server, follow the steps below.
     kubectl create secret generic hadoop-token-refresh-server-kerberos-keytab  \
         --from-file /mnt/secrets/krb5.keytab
 
-5. Create a k8s `service account` and `clusterrolebinding` that the service pod will use.
-   The service account should have `edit` capability for job `secret`s that contains
-   the Hadoop delegation tokens.
+5. Optionally, create a k8s `service account` and `clusterrolebinding` that
+   the service pod will use. The service account should have `edit` capability for
+   job `secret`s that contains the Hadoop delegation tokens.
 
 6. Finally, edit the config file for k8s `deployment` and launch the service pod
    using the deployment. The config file should include the right docker image tag

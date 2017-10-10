@@ -281,7 +281,7 @@ private class RenewTask(renew: Renew,
     } else {
       realUser.toString
     }
-    val credentials = new Credentials()
+    val credentials = new Credentials
     val ugi = UserGroupInformation.createProxyUser(user, UserGroupInformation.getLoginUser)
     val newToken = ugi.doAs(new PrivilegedExceptionAction[Token[_ <: TokenIdentifier]] {
 

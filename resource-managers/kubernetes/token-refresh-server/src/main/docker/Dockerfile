@@ -28,7 +28,7 @@ RUN apk upgrade --no-cache &&  \
     mkdir -p /opt/token-refresh-server/jars &&  \
     mkdir -p /opt/token-refresh-server/work-dir 
 
-ADD target/token-refresh-server-kubernetes_2.11-2.2.0-k8s-0.3.0-SNAPSHOT-assembly.tar.gz  \
+ADD target/token-refresh-server-kubernetes_2.11-2.2.0-k8s-0.5.0-SNAPSHOT-assembly.tar.gz  \
     /opt/token-refresh-server/jars
 WORKDIR /opt/token-refresh-server/work-dir
 
