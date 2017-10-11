@@ -61,7 +61,7 @@ private object Settings {
 
   val shouldScanAllNamespaces : Boolean = config.getBoolean(s"$configKeyPrefix.scanAllNamespaces")
 
-  val namespaceToScan : String = config.getString(s"s$configKeyPrefix.namespaceToScan")
+  val namespaceToScan : String = config.getString(s"$configKeyPrefix.namespaceToScan")
 }
 
 /*
