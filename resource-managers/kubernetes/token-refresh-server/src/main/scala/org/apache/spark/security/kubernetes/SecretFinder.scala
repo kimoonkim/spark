@@ -17,53 +17,74 @@
 package org.apache.spark.security.kubernetes
 
 import java.lang
-import java.util.{Timer, TimerTask}
+import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
+import scala.concurrent.ExecutionContext.Implicits.global
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, Scheduler}
 import io.fabric8.kubernetes.api.model.{Secret, SecretList}
 import io.fabric8.kubernetes.client._
 import io.fabric8.kubernetes.client.Watcher.Action
 import io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable
-
 import org.apache.spark.security.kubernetes.constants._
 
-private class SecretFinder(renewService: ActorRef,
-                           timer: Timer,
-                           kubernetesClient: KubernetesClient) {
+import scala.concurrent.duration.Duration
 
-  timer.schedule(new SecretScanner(renewService, kubernetesClient),
-    SECRET_SCANNER_INITIAL_DELAY_MILLIS, SECRET_SCANNER_PERIOD_MILLIS)
-  SecretFinder.selectSecrets(kubernetesClient)
-    .watch(new SecretWatcher(renewService))
+private trait SecretSelection {
+
+  def selectSecrets(kubernetesClient: KubernetesClient, settings: Settings):
+          FilterWatchListDeletable[Secret, SecretList, lang.Boolean, Watch, Watcher[Secret]] = {
+    val selector = kubernetesClient.secrets()
+    val namespacedSelector = if (settings.shouldScanAllNamespaces) {
+      selector.inAnyNamespace()
+    } else {
+      selector.inNamespace(settings.namespaceToScan)
+    }
+    namespacedSelector
+      .withLabel(SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS, SECRET_LABEL_VALUE_REFRESH_HADOOP_TOKENS)
+  }
+}
+
+private class SecretFinder(refreshService: ActorRef,
+                           scheduler: Scheduler,
+                           kubernetesClient: KubernetesClient,
+                           settings: Settings) extends SecretSelection {
+
+  private val cancellable = scheduler.schedule(
+    Duration(SECRET_SCANNER_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS),
+    Duration(SECRET_SCANNER_PERIOD_MILLIS, TimeUnit.MILLISECONDS),
+    new SecretScanner(refreshService, kubernetesClient, settings))
+  private val watched = selectSecrets(kubernetesClient, settings)
+    .watch(new SecretWatcher(refreshService))
 
   def stop(): Unit = {
-    timer.cancel()
-    kubernetesClient.close()
+    cancellable.cancel()
+    watched.close()
   }
 }
 
-private class SecretScanner(renewService: ActorRef,
-                            kubernetesClient: KubernetesClient) extends TimerTask with Logging {
+private class SecretScanner(refreshService: ActorRef,
+                            kubernetesClient: KubernetesClient,
+                            settings: Settings) extends Runnable with SecretSelection with Logging {
 
   override def run(): Unit = {
-    val secrets = SecretFinder.selectSecrets(kubernetesClient).list.getItems.asScala.toList
-    logInfo(s"Scanned ${secrets.map(_.getMetadata.getSelfLink).mkString}")
-    renewService ! UpdateSecretsToTrack(secrets)
+    val secrets = selectSecrets(kubernetesClient, settings).list.getItems.asScala.toList
+    logInfo(s"Scanned ${secrets.map(_.getMetadata.getSelfLink).mkString(", ")}")
+    refreshService ! UpdateSecretsToTrack(secrets)
   }
 }
 
-private class SecretWatcher(renewService: ActorRef) extends Watcher[Secret] with Logging {
+private class SecretWatcher(refreshService: ActorRef) extends Watcher[Secret] with Logging {
 
   override def eventReceived(action: Action, secret: Secret): Unit = {
     action match {
       case Action.ADDED =>
         logInfo(s"Found ${secret.getMetadata.getSelfLink} added")
-        renewService ! StartRefresh(secret)
+        refreshService ! StartRefresh(secret)
       case Action.DELETED =>
         logInfo(s"Found ${secret.getMetadata.getSelfLink} deleted")
-        renewService ! StopRefresh(secret)
+        refreshService ! StopRefresh(secret)
       case _ =>  // Do nothing
     }
   }
@@ -75,22 +96,6 @@ private class SecretWatcher(renewService: ActorRef) extends Watcher[Secret] with
 
 private object SecretFinder {
 
-  def apply(renewService: ActorRef, kubernetesClient: KubernetesClient) : SecretFinder = {
-    new SecretFinder(renewService,
-      new Timer(SECRET_SCANNER_THREAD_NAME, IS_DAEMON_THREAD),
-      kubernetesClient)
-  }
-
-  def selectSecrets(kubernetesClient: KubernetesClient):
-          FilterWatchListDeletable[Secret, SecretList, lang.Boolean, Watch, Watcher[Secret]] = {
-    val selector = kubernetesClient
-      .secrets()
-    val namespacedSelector = if (Settings.shouldScanAllNamespaces) {
-      selector.inAnyNamespace()
-    } else {
-      selector.inNamespace(Settings.namespaceToScan)
-    }
-    namespacedSelector
-      .withLabel(SECRET_LABEL_KEY_REFRESH_HADOOP_TOKENS, SECRET_LABEL_VALUE_REFRESH_HADOOP_TOKENS)
-  }
+  def apply(refreshService: ActorRef, scheduler: Scheduler, client: KubernetesClient,
+            settings: Settings) = new SecretFinder(refreshService, scheduler, client, settings)
 }

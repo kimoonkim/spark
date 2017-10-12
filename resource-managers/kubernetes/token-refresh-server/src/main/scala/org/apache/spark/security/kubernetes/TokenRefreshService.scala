@@ -27,7 +27,6 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
-import com.typesafe.config.Config
 import io.fabric8.kubernetes.api.model.{ObjectMeta, Secret}
 import io.fabric8.kubernetes.client.KubernetesClient
 import org.apache.commons.codec.binary.Base64
@@ -47,6 +46,12 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
   private val recentlyAddedSecretUids = mutable.HashSet[String]()
   private val hadoopConf = new Configuration
   private val clock = new Clock
+
+  override def preStart(): Unit = {
+    super.preStart()
+    val duration = Duration(REFRESH_SERVER_KERBEROS_RELOGIN_PERIOD_MILLIS, TimeUnit.MILLISECONDS)
+    scheduler.schedule(duration, duration, self, Relogin)
+  }
 
   override def receive: PartialFunction[Any, Unit] = {
     case Relogin =>
@@ -351,13 +356,11 @@ private object TokenRefreshService {
 
   val hadoopTokenPattern : Pattern = Pattern.compile(SECRET_DATA_ITEM_KEY_REGEX_HADOOP_TOKENS)
 
-  def apply(system: ActorSystem, kubernetesClient: KubernetesClient) : ActorRef = {
+  def apply(system: ActorSystem, kubernetesClient: KubernetesClient,
+            settings: Settings) : ActorRef = {
     UserGroupInformation.loginUserFromKeytab(
-      Settings.refreshServerKerberosPrincipal,
+      settings.refreshServerKerberosPrincipal,
       REFRESH_SERVER_KERBEROS_KEYTAB_PATH)
-    val actor = system.actorOf(Props(classOf[TokenRefreshService], kubernetesClient))
-    val duration = Duration(REFRESH_SERVER_KERBEROS_RELOGIN_PERIOD_MILLIS, TimeUnit.MILLISECONDS)
-    system.scheduler.schedule(duration, duration, actor, Relogin)
-    actor
+    system.actorOf(Props(classOf[TokenRefreshService], kubernetesClient))
   }
 }

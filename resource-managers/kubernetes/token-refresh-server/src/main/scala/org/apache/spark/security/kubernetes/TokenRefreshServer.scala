@@ -17,25 +17,24 @@
 package org.apache.spark.security.kubernetes
 
 import scala.annotation.tailrec
-import scala.collection.JavaConversions._
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem, Scheduler}
 import com.typesafe.config.{Config, ConfigFactory}
-import io.fabric8.kubernetes.client.DefaultKubernetesClient
+import io.fabric8.kubernetes.client.{DefaultKubernetesClient, KubernetesClient}
 import org.apache.log4j.{Level, Logger}
 
-private class Server {
+private class Server(injector: Injector) {
 
-  private val actorSystem = ActorSystem("TokenRefreshServer")
-  private val kubernetesClient = new DefaultKubernetesClient
+  private val actorSystem = injector.newActorSystem()
+  private val kubernetesClient = injector.newKubernetesClient()
+  private val settings = injector.newSettings()
   private var secretFinder : Option[SecretFinder] = None
 
   def start(): Unit = {
-    val config = ConfigFactory.load
-    val renewService = TokenRefreshService(actorSystem, kubernetesClient)
-    secretFinder = Some(SecretFinder(renewService, kubernetesClient))
+    val refreshService = injector.newTokenRefreshService(actorSystem, kubernetesClient, settings)
+    secretFinder = Some(injector.newSecretFinder(refreshService, kubernetesClient,
+      actorSystem.scheduler, settings))
   }
 
   def join() : Unit = {
@@ -47,12 +46,26 @@ private class Server {
   def stop(): Unit = {
     actorSystem.terminate()
     secretFinder.foreach(_.stop())
+    kubernetesClient.close()
   }
 }
 
-private object Settings {
+private class Injector {
 
-  private val config: Config = ConfigFactory.load
+  def newActorSystem() = ActorSystem("TokenRefreshServer")
+
+  def newKubernetesClient() : KubernetesClient = new DefaultKubernetesClient()
+
+  def newSettings() = new Settings()
+
+  def newTokenRefreshService(actorSystem: ActorSystem, client: KubernetesClient, settings: Settings)
+          = TokenRefreshService(actorSystem, client, settings)
+
+  def newSecretFinder(refreshService: ActorRef, client: KubernetesClient, scheduler: Scheduler,
+          settings: Settings) = SecretFinder(refreshService, scheduler, client, settings)
+}
+
+private class Settings(config: Config = ConfigFactory.load) {
 
   private val configKeyPrefix = "hadoop-token-refresh-server"
 
@@ -83,14 +96,20 @@ object TokenRefreshServer {
       case ("--debug" | "-d") :: tail =>
         logLevel = Level.DEBUG
         parse(tail)
-      case _ =>
+      case unknown =>
+        usage()
+        throw new IllegalArgumentException(s"Got an unknown argument: $unknown")
+    }
+
+    private def usage(): Unit = {
+      println("Usage: TokenRefreshServer [--verbose | -v] [--debug | -d]")
     }
   }
 
   def main(args: Array[String]): Unit = {
     val parsedArgs = new Arguments(args.toList)
     Logger.getRootLogger.setLevel(parsedArgs.logLevel)
-    val server = new Server
+    val server = new Server(new Injector)
     try {
       server.start()
       server.join()
