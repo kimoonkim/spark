@@ -53,7 +53,7 @@ private class SecretFinder(refreshService: ActorRef,
 
   private val cancellable = scheduler.schedule(
     Duration(SECRET_SCANNER_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS),
-    Duration(SECRET_SCANNER_PERIOD_MILLIS, TimeUnit.MILLISECONDS),
+    Duration(SECRET_SCANNER_INTERVAL_MILLIS, TimeUnit.MILLISECONDS),
     new SecretScanner(refreshService, kubernetesClient, settings))
   private val watched = selectSecrets(kubernetesClient, settings)
     .watch(new SecretWatcher(refreshService))

@@ -25,8 +25,8 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
-
-import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
+import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props, Scheduler}
+import com.google.common.annotations.VisibleForTesting
 import io.fabric8.kubernetes.api.model.{ObjectMeta, Secret}
 import io.fabric8.kubernetes.client.KubernetesClient
 import org.apache.commons.codec.binary.Base64
@@ -39,18 +39,24 @@ import org.apache.hadoop.security.token.{Token, TokenIdentifier}
 import org.apache.spark.security.kubernetes.constants._
 
 
-private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Actor with Logging {
+private class TokenRefreshService(kubernetesClient: KubernetesClient, scheduler: Scheduler,
+                                  ugi: UgiUtil,
+                                  settings: Settings,
+                                  clock: Clock) extends Actor with Logging {
 
-  private val scheduler = context.system.scheduler
   private val secretUidToTaskHandle = mutable.HashMap[String, Cancellable]()
   private val recentlyAddedSecretUids = mutable.HashSet[String]()
+  private val extraCancellableByClass = mutable.HashMap[Class[_], Cancellable]()
   private val hadoopConf = new Configuration
-  private val clock = new Clock
+
+  ugi.loginUserFromKeytab(settings.refreshServerKerberosPrincipal,
+    REFRESH_SERVER_KERBEROS_KEYTAB_PATH)
 
   override def preStart(): Unit = {
     super.preStart()
-    val duration = Duration(REFRESH_SERVER_KERBEROS_RELOGIN_PERIOD_MILLIS, TimeUnit.MILLISECONDS)
-    scheduler.schedule(duration, duration, self, Relogin)
+    val duration = Duration(REFRESH_SERVER_KERBEROS_RELOGIN_INTERVAL_MILLIS, TimeUnit.MILLISECONDS)
+    extraCancellableByClass.put(Relogin.getClass,
+      scheduler.schedule(duration, duration, self, Relogin))
   }
 
   override def receive: PartialFunction[Any, Unit] = {
@@ -69,11 +75,14 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
   override def postStop(): Unit = {
     super.postStop()
     secretUidToTaskHandle.values.map(_.cancel)
+    extraCancellableByClass.values.map(_.cancel)
   }
 
   private def launchReloginTask() = {
     val task = new ReloginTask
-    scheduler.scheduleOnce(Duration(0L, TimeUnit.MILLISECONDS), task)
+    extraCancellableByClass.remove(task.getClass).foreach(_.cancel)  // Cancel in case of hanging
+    extraCancellableByClass.put(task.getClass,
+      scheduler.scheduleOnce(Duration(0L, TimeUnit.MILLISECONDS), task))
   }
 
   private def startRefreshTask(secret: Secret) = {
@@ -82,67 +91,101 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient) extends Ac
   }
 
   private def addRefreshTask(secret: Secret) = {
-    secretUidToTaskHandle.getOrElseUpdate(getSecretUid(secret.getMetadata), {
+    val secretUid = getSecretUid(secret.getMetadata)
+    secretUidToTaskHandle.remove(secretUid).foreach(_.cancel)  // Cancel in case of hanging
+    secretUidToTaskHandle.put(secretUid, {
       val task = new StarterTask(secret, hadoopConf, self, clock)
       val cancellable = scheduler.scheduleOnce(
         Duration(STARTER_TASK_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS),
         task)
-      logInfo(s"Started refresh of tokens in ${secret.getMetadata.getSelfLink} with $cancellable")
+      logInfo(s"Started refresh of tokens in $secretUid of ${secret.getMetadata.getSelfLink}" +
+        s" with $cancellable")
       cancellable
     })
   }
 
-  private def removeRefreshTask(secret: Secret) : Unit = {
-    val uid = getSecretUid(secret.getMetadata)
-    secretUidToTaskHandle.remove(uid).foreach(cancellable => {
-      logInfo(s"Canceling refresh of tokens in ${secret.getMetadata.getSelfLink}")
+  private def removeRefreshTask(secret: Secret): Unit =
+    removeRefreshTask(getSecretUid(secret.getMetadata))
+
+  private def removeRefreshTask(secretUid: String): Unit = {
+    secretUidToTaskHandle.remove(secretUid).foreach(cancellable => {
+      logInfo(s"Canceling refresh of tokens in $secretUid")
       cancellable.cancel()
     })
   }
 
-  private def updateSecretsToTrack(currentSecrets: List[Secret]) : Unit = {
+  private def updateSecretsToTrack(currentSecrets: List[Secret]): Unit = {
     val secretsByUids = currentSecrets.map(secret => (getSecretUid(secret.getMetadata), secret))
       .toMap
     val currentUids = secretsByUids.keySet
-    val priorUids = secretUidToTaskHandle.keySet
+    val priorUids = secretUidToTaskHandle.keys.toSet
     val uidsToAdd = currentUids -- priorUids
     uidsToAdd.foreach(uid => addRefreshTask(secretsByUids(uid)))
     val uidsToRemove = priorUids -- currentUids -- recentlyAddedSecretUids
-    uidsToRemove.foreach(uid => removeRefreshTask(secretsByUids(uid)))
+    uidsToRemove.foreach(uid => removeRefreshTask(uid))
     recentlyAddedSecretUids.clear()
   }
 
   private def scheduleRenewTask(renew: Renew) = {
-    val uid = getSecretUid(renew.secretMeta)
-    if (secretUidToTaskHandle.get(uid).nonEmpty) {
+    val secretUid = getSecretUid(renew.secretMeta)
+    val priorTask = secretUidToTaskHandle.remove(secretUid)
+    if (priorTask.nonEmpty) {
+      priorTask.get.cancel()  // Cancel in case of hanging.
       val numConsecutiveErrors = renew.numConsecutiveErrors
       if (numConsecutiveErrors < RENEW_TASK_MAX_CONSECUTIVE_ERRORS) {
         val durationTillExpire = math.max(0L, renew.expireTime - clock.nowInMillis())
-        val renewTime = math.max(0L, renew.expireTime - durationTillExpire / 10)  // 90% mark.
+        val renewTime = math.max(0L, renew.expireTime - durationTillExpire / 10) // 90% mark.
         val durationTillRenew = math.max(0L, renewTime - clock.nowInMillis())
         val task = new RenewTask(renew, hadoopConf, self, kubernetesClient, clock)
-        logInfo(s"Scheduling refresh of tokens with " +
+        logInfo(s"Scheduling refresh of tokens in $secretUid of " +
           s"${renew.secretMeta.getSelfLink} at now + $durationTillRenew millis.")
         val cancellable = scheduler.scheduleOnce(
           Duration(durationTillRenew, TimeUnit.MILLISECONDS), task)
-        secretUidToTaskHandle.put(uid, cancellable)
+        secretUidToTaskHandle.put(secretUid, cancellable)
       } else {
-        logWarning(s"Got too many errors for ${renew.secretMeta.getSelfLink}. Abandoning.")
-        val maybeCancellable = secretUidToTaskHandle.remove(uid)
+        logWarning(s"Got too many errors for secret $secretUid of" +
+          s" ${renew.secretMeta.getSelfLink}. Abandoning.")
+        val maybeCancellable = secretUidToTaskHandle.remove(secretUid)
         maybeCancellable.foreach(_.cancel())
       }
     } else {
-      logWarning(s"Could not find an entry for renew task" +
+      logWarning(s"Could not find a StarterTask entry for a renew work for secret $secretUid of " +
         s" ${renew.secretMeta.getSelfLink}. Maybe the secret got deleted")
     }
   }
 
   private def getSecretUid(secret: ObjectMeta) = secret.getUid
+
+  @VisibleForTesting
+  private[kubernetes] def numExtraCancellables() = extraCancellableByClass.size
+
+  @VisibleForTesting
+  private[kubernetes] def hasExtraCancellable(key: Class[_], expected: Cancellable): Boolean = {
+    val value = extraCancellableByClass.get(key)
+    value.nonEmpty && expected == value.get
+  }
+
+  @VisibleForTesting
+  private[kubernetes] def numPendingSecretTasks() = secretUidToTaskHandle.size
+
+  @VisibleForTesting
+  private[kubernetes] def hasSecretTaskCancellable(secretUid: String, expected: Cancellable)
+          : Boolean = {
+    val value = secretUidToTaskHandle.get(secretUid)
+    value.nonEmpty && expected == value.get
+  }
+}
+
+private class UgiUtil {
+
+  def loginUserFromKeytab(kerberosPrincipal: String, kerberosKeytabPath: String): Unit =
+    UserGroupInformation.loginUserFromKeytab(kerberosPrincipal, kerberosKeytabPath)
+
 }
 
 private class ReloginTask extends Runnable {
 
-  override def run() : Unit = {
+  override def run(): Unit = {
     UserGroupInformation.getLoginUser.checkTGTAndReloginFromKeytab()
   }
 }
@@ -154,13 +197,14 @@ private class StarterTask(secret: Secret,
 
   private var hasError = false
 
-  override def run() : Unit = {
+  override def run(): Unit = {
     val tokenToExpireTime = readTokensFromSecret()
     logInfo(s"Read Hadoop tokens: $tokenToExpireTime")
     val nextExpireTime = if (tokenToExpireTime.nonEmpty) {
       tokenToExpireTime.values.min
     } else {
-      logWarning(s"Got an empty token list with ${secret.getMetadata.getSelfLink}")
+      logWarning(s"Got an empty token list with secret ${secret.getMetadata.getUid} of" +
+        s" ${secret.getMetadata.getSelfLink}")
       hasError = true
       getRetryTime
     }
@@ -169,7 +213,7 @@ private class StarterTask(secret: Secret,
       numConsecutiveErrors)
   }
 
-  private def readTokensFromSecret() : Map[Token[_ <: TokenIdentifier], Long] = {
+  private def readTokensFromSecret(): Map[Token[_ <: TokenIdentifier], Long] = {
     val dataItems = secret.getData.asScala.filterKeys(
       _.startsWith(SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS)).toSeq.sorted
     val latestDataItem = if (dataItems.nonEmpty) Some(dataItems.max) else None
@@ -201,7 +245,7 @@ private class RenewTask(renew: Renew,
 
   private var hasError = false
 
-  override def run() : Unit = {
+  override def run(): Unit = {
     val deadline = renew.expireTime + RENEW_TASK_DEADLINE_LOOK_AHEAD_MILLIS
     val nowMillis = clock.nowInMillis()
     val newExpireTimeByToken : Map[Token[_ <: TokenIdentifier], Long] =
@@ -222,7 +266,8 @@ private class RenewTask(renew: Renew,
       refreshService ! Renew(nextExpireTime, newExpireTimeByToken, renew.secretMeta,
         numConsecutiveErrors)
     } else {
-      logWarning(s"Got an empty token list with ${renew.secretMeta.getSelfLink}")
+      logWarning(s"Got an empty token list with secret ${renew.secretMeta.getUid} of" +
+        s" ${renew.secretMeta.getSelfLink}")
     }
   }
 
@@ -303,7 +348,7 @@ private class RenewTask(renew: Renew,
   }
 
   private def writeTokensToSecret(tokenToExpire: Map[Token[_ <: TokenIdentifier], Long],
-                                  nowMillis: Long) : Unit = {
+                                  nowMillis: Long): Unit = {
     val durationUntilExpire = tokenToExpire.values.min - nowMillis
     val key = s"$SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS$nowMillis-$durationUntilExpire"
     val credentials = new Credentials()
@@ -323,7 +368,8 @@ private class RenewTask(renew: Renew,
     // where some newly launching executors may access the previous token.
     dataItemKeys.dropRight(2).foreach(editor.removeFromData)
     editor.done
-    logInfo(s"Wrote new tokens $tokenToExpire to a data item $key in ${secretMeta.getSelfLink}")
+    logInfo(s"Wrote new tokens $tokenToExpire to a data item $key in secret ${secretMeta.getUid}" +
+      s" of ${secretMeta.getSelfLink}")
   }
 
   private def serializeCredentials(credentials: Credentials) = {
@@ -358,9 +404,7 @@ private object TokenRefreshService {
 
   def apply(system: ActorSystem, kubernetesClient: KubernetesClient,
             settings: Settings) : ActorRef = {
-    UserGroupInformation.loginUserFromKeytab(
-      settings.refreshServerKerberosPrincipal,
-      REFRESH_SERVER_KERBEROS_KEYTAB_PATH)
-    system.actorOf(Props(classOf[TokenRefreshService], kubernetesClient))
+    system.actorOf(Props(classOf[TokenRefreshService], kubernetesClient, system.scheduler,
+      new UgiUtil, settings, new Clock))
   }
 }

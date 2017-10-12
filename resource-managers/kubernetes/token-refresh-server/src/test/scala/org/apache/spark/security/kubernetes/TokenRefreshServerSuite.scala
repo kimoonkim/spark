@@ -31,7 +31,7 @@ class TokenRefreshServerSuite extends FunSuite with BeforeAndAfter {
 
   private val configKeyPrefix = "hadoop-token-refresh-server"
   private val config = ConfigFactory.parseMap(
-    Map(s"$configKeyPrefix.kerberosPrincipal" -> "my-principla",
+    Map(s"$configKeyPrefix.kerberosPrincipal" -> "my-principal",
       s"$configKeyPrefix.scanAllNamespaces" -> true,
       s"$configKeyPrefix.namespaceToScan" -> "my-namespace").asJava)
   private val settings = new Settings(config)

@@ -1,3 +1,19 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.spark.security.kubernetes
 
 import java.util.concurrent.TimeUnit
@@ -24,8 +40,7 @@ import org.apache.spark.security.kubernetes.constants._
 class SecretFinderSuite extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfter {
 
   private val configKeyPrefix = "hadoop-token-refresh-server"
-
-  private val configMap1 = Map(s"$configKeyPrefix.kerberosPrincipal" -> "my-principla",
+  private val configMap1 = Map(s"$configKeyPrefix.kerberosPrincipal" -> "my-principal",
       s"$configKeyPrefix.scanAllNamespaces" -> true,
       s"$configKeyPrefix.namespaceToScan" -> "my-namespace")
   private val configMap2 = configMap1.updated(s"$configKeyPrefix.scanAllNamespaces", false)
@@ -142,8 +157,9 @@ class SecretFinderSuite extends TestKit(ActorSystem("test")) with FunSuiteLike w
     val scannerCaptor: ArgumentCaptor[Runnable] = ArgumentCaptor.forClass(classOf[Runnable])
     verify(scheduler).schedule(
       Matchers.eq(Duration(SECRET_SCANNER_INITIAL_DELAY_MILLIS, TimeUnit.MILLISECONDS)),
-      Matchers.eq(Duration(SECRET_SCANNER_PERIOD_MILLIS, TimeUnit.MILLISECONDS)),
-      scannerCaptor.capture())(any(classOf[ExecutionContext])
+      Matchers.eq(Duration(SECRET_SCANNER_INTERVAL_MILLIS, TimeUnit.MILLISECONDS)),
+      scannerCaptor.capture())(
+      any(classOf[ExecutionContext])
     )
     scannerCaptor.getValue
   }
