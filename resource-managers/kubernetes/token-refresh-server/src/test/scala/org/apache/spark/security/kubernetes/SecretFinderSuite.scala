@@ -7,7 +7,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, FiniteDuration}
 
 import akka.actor.{ActorSystem, Cancellable, Scheduler}
-import akka.testkit.{ImplicitSender, TestActorRef, TestActors, TestKit, TestProbe}
+import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import io.fabric8.kubernetes.api.model.{DoneableSecret, Secret, SecretList}
 import io.fabric8.kubernetes.client.Watcher.Action
@@ -21,8 +21,7 @@ import org.scalatest.{BeforeAndAfter, FunSuiteLike}
 import org.apache.spark.security.kubernetes.constants._
 
 
-class SecretFinderSuite extends TestKit(ActorSystem("test")) with ImplicitSender with FunSuiteLike
-  with BeforeAndAfter {
+class SecretFinderSuite extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfter {
 
   private val configKeyPrefix = "hadoop-token-refresh-server"
 
@@ -30,8 +29,8 @@ class SecretFinderSuite extends TestKit(ActorSystem("test")) with ImplicitSender
       s"$configKeyPrefix.scanAllNamespaces" -> true,
       s"$configKeyPrefix.namespaceToScan" -> "my-namespace")
   private val configMap2 = configMap1.updated(s"$configKeyPrefix.scanAllNamespaces", false)
-  private val probe = TestProbe()
-  private val tokenRefreshService = TestActorRef(TestActors.forwardActorProps(probe.ref))
+  private val tokenRefreshServiceProbe = TestProbe()
+  private val tokenRefreshService = tokenRefreshServiceProbe.ref
   @Mock(answer = Answers.RETURNS_SMART_NULLS)
   private var kubernetesClient: KubernetesClient = _
   @Mock(answer = Answers.RETURNS_SMART_NULLS)
@@ -116,7 +115,7 @@ class SecretFinderSuite extends TestKit(ActorSystem("test")) with ImplicitSender
     val scanner = new SecretScanner(tokenRefreshService, kubernetesClient, settings)
     scanner.run()
 
-    probe.expectMsg(UpdateSecretsToTrack(secrets))
+    tokenRefreshServiceProbe.expectMsg(UpdateSecretsToTrack(secrets))
   }
 
   test("Watcher sends the refresh service new or deleted secret") {
@@ -125,10 +124,10 @@ class SecretFinderSuite extends TestKit(ActorSystem("test")) with ImplicitSender
     val watcher = new SecretWatcher(tokenRefreshService)
 
     watcher.eventReceived(Action.ADDED, secret1)
-    probe.expectMsg(StartRefresh(secret1))
+    tokenRefreshServiceProbe.expectMsg(StartRefresh(secret1))
 
     watcher.eventReceived(Action.DELETED, secret2)
-    probe.expectMsg(StopRefresh(secret2))
+    tokenRefreshServiceProbe.expectMsg(StopRefresh(secret2))
 
     watcher.eventReceived(Action.MODIFIED, secret1)  // Ignored.
     watcher.eventReceived(Action.ERROR, secret1)  // Ignored.
