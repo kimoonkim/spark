@@ -19,6 +19,7 @@ package org.apache.spark.security.kubernetes
 import scala.annotation.tailrec
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
+
 import akka.actor.{ActorRef, ActorSystem, Scheduler}
 import com.typesafe.config.{Config, ConfigFactory}
 import io.fabric8.kubernetes.client.{DefaultKubernetesClient, KubernetesClient}
@@ -77,44 +78,53 @@ private class Settings(config: Config = ConfigFactory.load) {
   val namespaceToScan : String = config.getString(s"$configKeyPrefix.namespaceToScan")
 }
 
-/*
- * TODO: Support REST endpoint for checking status of tokens.
- */
-object TokenRefreshServer {
+private class CommandLine(args: List[String]) {
 
-  private class Arguments(args: List[String]) {
+  var logLevel: Level = Level.WARN
 
-    var logLevel: Level = Level.WARN
+  parse(args)
 
-    parse(args)
-
-    @tailrec
-    private def parse(args: List[String]): Unit = args match {
-      case ("--verbose" | "-v") :: tail =>
-        logLevel = Level.INFO
-        parse(tail)
-      case ("--debug" | "-d") :: tail =>
-        logLevel = Level.DEBUG
-        parse(tail)
-      case unknown =>
+  @tailrec
+  private def parse(args: List[String]): Unit = args match {
+    case ("--verbose" | "-v") :: tail =>
+      logLevel = Level.INFO
+      parse(tail)
+    case ("--debug" | "-d") :: tail =>
+      logLevel = Level.DEBUG
+      parse(tail)
+    case unknown if unknown.nonEmpty =>
         usage()
         throw new IllegalArgumentException(s"Got an unknown argument: $unknown")
-    }
-
-    private def usage(): Unit = {
-      println("Usage: TokenRefreshServer [--verbose | -v] [--debug | -d]")
-    }
+    case _ =>
   }
 
-  def main(args: Array[String]): Unit = {
-    val parsedArgs = new Arguments(args.toList)
+  private def usage(): Unit = {
+    println("Usage: TokenRefreshServer [--verbose | -v] [--debug | -d]")
+  }
+}
+
+private class Launcher(parsedArgs: CommandLine, server: Server) {
+
+  def launch(): Unit = {
     Logger.getRootLogger.setLevel(parsedArgs.logLevel)
-    val server = new Server(new Injector)
     try {
       server.start()
       server.join()
     } finally {
       server.stop()
     }
+  }
+}
+
+/*
+ * TODO: Support REST endpoint for checking status of tokens.
+ */
+object TokenRefreshServer {
+
+  def main(args: Array[String]): Unit = {
+    val parsedArgs = new CommandLine(args.toList)
+    val server = new Server(new Injector)
+    val launcher = new Launcher(parsedArgs, server)
+    launcher.launch()
   }
 }

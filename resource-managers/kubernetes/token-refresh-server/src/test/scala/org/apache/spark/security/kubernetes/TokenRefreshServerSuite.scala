@@ -18,10 +18,10 @@ package org.apache.spark.security.kubernetes
 
 import scala.concurrent.Future
 import scala.collection.JavaConverters._
-
 import akka.actor.{ActorRef, ActorSystem, Scheduler}
 import com.typesafe.config.ConfigFactory
 import io.fabric8.kubernetes.client.KubernetesClient
+import org.apache.log4j.Level
 import org.mockito.{Answers, Mock, MockitoAnnotations}
 import org.mockito.Mockito.{doReturn, never, verify, when}
 import org.scalatest.{BeforeAndAfter, FunSuite}
@@ -49,6 +49,8 @@ class TokenRefreshServerSuite extends FunSuite with BeforeAndAfter {
   private var tokenRefreshServiceActorRef: ActorRef = _
   @Mock(answer = Answers.RETURNS_SMART_NULLS)
   private var secretFinder: SecretFinder = _
+  @Mock(answer = Answers.RETURNS_SMART_NULLS)
+  private var mockServer: Server = _
   private var server : Server = _
 
   before {
@@ -86,5 +88,53 @@ class TokenRefreshServerSuite extends FunSuite with BeforeAndAfter {
     verify(actorSystem).terminate()
     verify(kubernetesClient).close()
     verify(secretFinder).stop()
+  }
+
+  test("The command line parses properly") {
+    var parsedArgs = new CommandLine(List())
+    assert(parsedArgs.logLevel == Level.WARN)
+
+    parsedArgs = new CommandLine(List("-v"))
+    assert(parsedArgs.logLevel == Level.INFO)
+    parsedArgs = new CommandLine(List("--verbose"))
+    assert(parsedArgs.logLevel == Level.INFO)
+
+    parsedArgs = new CommandLine(List("-d"))
+    assert(parsedArgs.logLevel == Level.DEBUG)
+    parsedArgs = new CommandLine(List("--debug"))
+    assert(parsedArgs.logLevel == Level.DEBUG)
+  }
+
+  test("Unknown command line arguments throws") {
+    intercept[IllegalArgumentException] {
+      new CommandLine(List(""))
+    }
+    intercept[IllegalArgumentException] {
+      new CommandLine(List("-f"))
+    }
+    intercept[IllegalArgumentException] {
+      new CommandLine(List("--unknown"))
+    }
+  }
+
+  test("The server launches properly") {
+    val launcher = new Launcher(new CommandLine(List()), mockServer)
+    launcher.launch()
+
+    verify(mockServer).start()
+    verify(mockServer).join()
+    verify(mockServer).stop()
+  }
+
+  test("The server stops properly upon error") {
+    when(mockServer.stop()).thenThrow(new RuntimeException)
+    val launcher = new Launcher(new CommandLine(List()), mockServer)
+    intercept[RuntimeException] {
+      launcher.launch()
+    }
+
+    verify(mockServer).start()
+    verify(mockServer).join()
+    verify(mockServer).stop()
   }
 }

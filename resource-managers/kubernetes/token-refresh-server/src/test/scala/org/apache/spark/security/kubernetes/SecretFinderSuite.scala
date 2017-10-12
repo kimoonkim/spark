@@ -5,7 +5,8 @@ import java.util.concurrent.TimeUnit
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, FiniteDuration}
-import akka.actor.{ActorRef, ActorSystem, Cancellable, Props, Scheduler}
+
+import akka.actor.{ActorSystem, Cancellable, Scheduler}
 import akka.testkit.{ImplicitSender, TestActorRef, TestActors, TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import io.fabric8.kubernetes.api.model.{DoneableSecret, Secret, SecretList}
@@ -15,7 +16,8 @@ import io.fabric8.kubernetes.client.dsl.{FilterWatchListDeletable, FilterWatchLi
 import org.mockito._
 import org.mockito.Matchers.{any, anyString}
 import org.mockito.Mockito.{doReturn, never, verify, when}
-import org.scalatest.{BeforeAndAfter, FunSuite, FunSuiteLike}
+import org.scalatest.{BeforeAndAfter, FunSuiteLike}
+
 import org.apache.spark.security.kubernetes.constants._
 
 
