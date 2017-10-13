@@ -19,6 +19,9 @@ package org.apache.spark.security.kubernetes
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.{Duration, FiniteDuration}
+
 import akka.actor.{ActorRef, ActorSystem, Cancellable, Props, Scheduler}
 import akka.testkit.{TestActorRef, TestKit}
 import com.typesafe.config.ConfigFactory
@@ -29,10 +32,9 @@ import org.mockito._
 import org.mockito.Matchers.{any, same}
 import org.mockito.Mockito.{verify, verifyNoMoreInteractions, when}
 import org.scalatest.{BeforeAndAfter, FunSuiteLike}
+
 import org.apache.spark.security.kubernetes.constants._
 
-import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.{Duration, FiniteDuration}
 
 class TokenRefreshServiceSuite extends TestKit(ActorSystem("test"))
   with FunSuiteLike with BeforeAndAfter {
@@ -195,7 +197,7 @@ class TokenRefreshServiceSuite extends TestKit(ActorSystem("test"))
     assert(actor.numPendingSecretTasks() == 0)
   }
 
-  test("The UpdateSecretsToTrack command resets tasks set") {
+  test("The UpdateSecretsToTrack command resets the task set to track") {
     val secret1 = new SecretBuilder()
       .withNewMetadata()
       .withUid("uid-0101")
@@ -218,11 +220,12 @@ class TokenRefreshServiceSuite extends TestKit(ActorSystem("test"))
         starterTask2Cancellable,  // for secret2
         renewTaskCancellable,     // for secret2
         starterTask3Cancellable)  // for secret3
-    actorRef ! UpdateSecretsToTrack(List(secret1))
-    actorRef ! StartRefresh(secret2)
+    actorRef ! UpdateSecretsToTrack(List(secret1))  // This adds a task for secret1.
+    actorRef ! StartRefresh(secret2)  // Adds the secret2 task.
     actorRef ! Renew(expireTime = nowMillis + 10000L, Map(), secret2.getMetadata,
       numConsecutiveErrors = 0)
-    actorRef ! UpdateSecretsToTrack(List(secret2, secret3))
+    // This removes secret1, but not the recently added secret2.
+    actorRef ! UpdateSecretsToTrack(List(secret3))
 
     verify(starterTask1Cancellable).cancel()
     val actor: TokenRefreshService = actorRef.underlyingActor
