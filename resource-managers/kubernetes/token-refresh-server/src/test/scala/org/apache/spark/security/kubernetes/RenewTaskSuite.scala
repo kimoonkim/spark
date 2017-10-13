@@ -19,18 +19,18 @@ package org.apache.spark.security.kubernetes
 import java.security.PrivilegedExceptionAction
 
 import scala.collection.JavaConverters._
-
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import io.fabric8.kubernetes.api.model.{DoneableSecret, Secret, SecretBuilder, SecretList}
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.fabric8.kubernetes.client.dsl.{MixedOperation, NonNamespaceOperation, Resource}
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.hdfs.DistributedFileSystem
 import org.apache.hadoop.hdfs.security.token.delegation.DelegationTokenIdentifier
 import org.apache.hadoop.io.Text
-import org.apache.hadoop.security.UserGroupInformation
+import org.apache.hadoop.security.{Credentials, UserGroupInformation}
 import org.apache.hadoop.security.token.{Token, TokenIdentifier}
-import org.mockito.{Answers, Matchers, Mock, MockitoAnnotations}
+import org.mockito._
 import org.mockito.Matchers.{any, anyString}
 import org.mockito.Mockito.{doReturn, verify, when}
 import org.scalatest.{BeforeAndAfter, FunSuiteLike}
@@ -41,6 +41,8 @@ class RenewTaskSuite extends TestKit(ActorSystem("test")) with FunSuiteLike with
   private var ugi: UgiUtil = _
   @Mock(answer = Answers.RETURNS_SMART_NULLS)
   private var fsUtil: FileSystemUtil = _
+  @Mock(answer = Answers.RETURNS_SMART_NULLS)
+  private var hdfs: DistributedFileSystem = _
   @Mock(answer = Answers.RETURNS_SMART_NULLS)
   private var loginUser: UserGroupInformation = _
   @Mock(answer = Answers.RETURNS_SMART_NULLS)
@@ -104,6 +106,7 @@ class RenewTaskSuite extends TestKit(ActorSystem("test")) with FunSuiteLike with
   before {
     MockitoAnnotations.initMocks(this)
     when(ugi.getLoginUser).thenReturn(loginUser)
+    when(loginUser.getUserName).thenReturn("refresh-server")
     when(ugi.createProxyUser(anyString, Matchers.eq(loginUser))).thenReturn(proxyUser)
   }
 
@@ -186,6 +189,16 @@ class RenewTaskSuite extends TestKit(ActorSystem("test")) with FunSuiteLike with
       secret2.getMetadata,
       numConsecutiveErrors = 0)
     tokenRefreshServiceProbe.expectMsg(newRenewCommand)  // Sent a new Renew command to the service.
+
+    val actionCaptor: ArgumentCaptor[PrivilegedExceptionAction[Token[_ <: TokenIdentifier]]] =
+      ArgumentCaptor.forClass(classOf[PrivilegedExceptionAction[Token[_ <: TokenIdentifier]]])
+    verify(proxyUser).doAs(actionCaptor.capture())
+    val action = actionCaptor.getValue
+    when(fsUtil.getFileSystem(hadoopConf))
+      .thenReturn(hdfs)
+    doReturn(Array(token3)).when(hdfs)
+      .addDelegationTokens(Matchers.eq("refresh-server"), any(classOf[Credentials]))
+    assert(action.run() == token3)
   }
 
   private def buildHdfsToken(owner: String, renewer: String, realUser: String, password: String,
