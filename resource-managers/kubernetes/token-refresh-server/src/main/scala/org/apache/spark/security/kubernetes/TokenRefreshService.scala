@@ -181,12 +181,26 @@ private class UgiUtil {
   def loginUserFromKeytab(kerberosPrincipal: String, kerberosKeytabPath: String): Unit =
     UserGroupInformation.loginUserFromKeytab(kerberosPrincipal, kerberosKeytabPath)
 
+  def getLoginUser: UserGroupInformation = UserGroupInformation.getLoginUser
+
+  def createProxyUser(user: String, realUser: UserGroupInformation): UserGroupInformation =
+    UserGroupInformation.createProxyUser(user, realUser)
 }
 
-private class ReloginTask extends Runnable {
+private class FileSystemUtil {
+
+  def getFileSystem(hadoopConf: Configuration): FileSystem = FileSystem.get(hadoopConf)
+
+  def renewToken(token: Token[_ <: TokenIdentifier], hadoopConf: Configuration): Long =
+    token.renew(hadoopConf)
+}
+
+private class ReloginTask(ugi: UgiUtil) extends Runnable {
+
+  def this() = this(new UgiUtil)
 
   override def run(): Unit = {
-    UserGroupInformation.getLoginUser.checkTGTAndReloginFromKeytab()
+    ugi.getLoginUser.checkTGTAndReloginFromKeytab()
   }
 }
 
@@ -198,10 +212,13 @@ private class StarterTask(secret: Secret,
   private var hasError = false
 
   override def run(): Unit = {
-    val tokenToExpireTime = readTokensFromSecret()
-    logInfo(s"Read Hadoop tokens: $tokenToExpireTime")
-    val nextExpireTime = if (tokenToExpireTime.nonEmpty) {
-      tokenToExpireTime.values.min
+    val tokensToExpireTimes = readTokensFromSecret()
+    val tokenKeys = tokensToExpireTimes.keys.map(
+      token => token.getKind.toString + "@" + token.getService.toString).mkString(", ")
+    val nextExpireTime = if (tokensToExpireTimes.nonEmpty) {
+      val minExpireTime = tokensToExpireTimes.values.min
+      logInfo(s"Read Hadoop tokens: $tokenKeys with $minExpireTime")
+      minExpireTime
     } else {
       logWarning(s"Got an empty token list with secret ${secret.getMetadata.getUid} of" +
         s" ${secret.getMetadata.getSelfLink}")
@@ -209,7 +226,7 @@ private class StarterTask(secret: Secret,
       getRetryTime
     }
     val numConsecutiveErrors = if (hasError) 1 else 0
-    refreshService ! Renew(nextExpireTime, tokenToExpireTime, secret.getMetadata,
+    refreshService ! Renew(nextExpireTime, tokensToExpireTimes, secret.getMetadata,
       numConsecutiveErrors)
   }
 
@@ -225,10 +242,9 @@ private class StarterTask(secret: Secret,
         val createTime = matcher.group(1).toLong
         val duration = matcher.group(2).toLong
         val expireTime = createTime + duration
-        val creds = new Credentials
-        creds.readTokenStorageStream(new DataInputStream(new ByteArrayInputStream(
-          Base64.decodeBase64(data))))
-        creds.getAllTokens.asScala.toList.map {
+        val credentials = new Credentials
+        TokensSerializer.deserialize(credentials, Base64.decodeBase64(data))
+        credentials.getAllTokens.asScala.toList.map {
           (_, expireTime)
         }
     }.toList.flatten.toMap
@@ -241,7 +257,13 @@ private class RenewTask(renew: Renew,
                         hadoopConf: Configuration,
                         refreshService: ActorRef,
                         kubernetesClient: KubernetesClient,
-                        clock: Clock) extends Runnable with Logging {
+                        clock: Clock,
+                        ugi: UgiUtil,
+                        fsUtil: FileSystemUtil) extends Runnable with Logging {
+
+  def this(renew: Renew, hadoopConf: Configuration, refreshService: ActorRef, client: KubernetesClient,
+    clock: Clock) = this(renew, hadoopConf, refreshService, client, clock,
+    ugi = new UgiUtil, fsUtil = new FileSystemUtil)
 
   private var hasError = false
 
@@ -249,14 +271,14 @@ private class RenewTask(renew: Renew,
     val deadline = renew.expireTime + RENEW_TASK_DEADLINE_LOOK_AHEAD_MILLIS
     val nowMillis = clock.nowInMillis()
     val newExpireTimeByToken : Map[Token[_ <: TokenIdentifier], Long] =
-      renew.tokenToExpireTime.map {
+      renew.tokensToExpireTimes.map {
         case (token, expireTime) =>
           val (maybeNewToken, maybeNewExpireTime) = refresh(token, expireTime, deadline, nowMillis)
           (maybeNewToken, maybeNewExpireTime)
       }
       .toMap
     if (newExpireTimeByToken.nonEmpty) {
-      val newTokens = newExpireTimeByToken.keySet -- renew.tokenToExpireTime.keySet
+      val newTokens = newExpireTimeByToken.keySet -- renew.tokensToExpireTimes.keySet
       if (newTokens.nonEmpty) {
         writeTokensToSecret(newExpireTimeByToken, nowMillis)
       }
@@ -309,7 +331,7 @@ private class RenewTask(renew: Renew,
       try {
         logDebug(s"Renewing token $token with current expire time $expireTime," +
           s" deadline $deadline, now $nowMillis")
-        val newExpireTime = token.renew(hadoopConf)
+        val newExpireTime = fsUtil.renewToken(token, hadoopConf)
         logDebug(s"Renewed token $token. Next expire time $newExpireTime")
         newExpireTime
       } catch {
@@ -334,12 +356,12 @@ private class RenewTask(renew: Renew,
       realUser.toString
     }
     val credentials = new Credentials
-    val ugi = UserGroupInformation.createProxyUser(user, UserGroupInformation.getLoginUser)
-    val newToken = ugi.doAs(new PrivilegedExceptionAction[Token[_ <: TokenIdentifier]] {
+    val proxyUgi = ugi.createProxyUser(user, ugi.getLoginUser)
+    val newToken = proxyUgi.doAs(new PrivilegedExceptionAction[Token[_ <: TokenIdentifier]] {
 
       override def run() : Token[_ <: TokenIdentifier] = {
-        val fs = FileSystem.get(hadoopConf)
-        val tokens = fs.addDelegationTokens(UserGroupInformation.getLoginUser.getUserName,
+        val fs = fsUtil.getFileSystem(hadoopConf)
+        val tokens = fs.addDelegationTokens(ugi.getLoginUser.getUserName,
           credentials)
         tokens(0)
       }
@@ -347,14 +369,11 @@ private class RenewTask(renew: Renew,
     newToken
   }
 
-  private def writeTokensToSecret(tokenToExpire: Map[Token[_ <: TokenIdentifier], Long],
+  private def writeTokensToSecret(tokensToExpireTimes: Map[Token[_ <: TokenIdentifier], Long],
                                   nowMillis: Long): Unit = {
-    val durationUntilExpire = tokenToExpire.values.min - nowMillis
+    val durationUntilExpire = tokensToExpireTimes.values.min - nowMillis
     val key = s"$SECRET_DATA_ITEM_KEY_PREFIX_HADOOP_TOKENS$nowMillis-$durationUntilExpire"
-    val credentials = new Credentials()
-    tokenToExpire.keys.foreach(token => credentials.addToken(token.getService, token))
-    val serialized = serializeCredentials(credentials)
-    val value = Base64.encodeBase64String(serialized)
+    val value = TokensSerializer.serializeBase64(tokensToExpireTimes.keys)
     val secretMeta = renew.secretMeta
     val editor = kubernetesClient.secrets
       .inNamespace(secretMeta.getNamespace)
@@ -368,11 +387,23 @@ private class RenewTask(renew: Renew,
     // where some newly launching executors may access the previous token.
     dataItemKeys.dropRight(2).foreach(editor.removeFromData)
     editor.done
-    logInfo(s"Wrote new tokens $tokenToExpire to a data item $key in secret ${secretMeta.getUid}" +
-      s" of ${secretMeta.getSelfLink}")
+    logInfo(s"Wrote new tokens $tokensToExpireTimes to a data item $key in" +
+      s" secret ${secretMeta.getUid} of ${secretMeta.getSelfLink}")
   }
 
-  private def serializeCredentials(credentials: Credentials) = {
+  private def getRetryTime = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
+}
+
+private object TokensSerializer {
+
+  def serializeBase64(tokens: Iterable[Token[_ <: TokenIdentifier]]): String = {
+    val credentials = new Credentials()
+    tokens.foreach(token => credentials.addToken(token.getService, token))
+    val serialized = serializeCredentials(credentials)
+    Base64.encodeBase64String(serialized)
+  }
+
+  private def serializeCredentials(credentials: Credentials): Array[Byte] = {
     val byteStream = new ByteArrayOutputStream
     val dataStream = new DataOutputStream(byteStream)
     credentials.writeTokenStorageToStream(dataStream)
@@ -380,7 +411,11 @@ private class RenewTask(renew: Renew,
     byteStream.toByteArray
   }
 
-  private def getRetryTime = clock.nowInMillis() + RENEW_TASK_RETRY_TIME_MILLIS
+  def deserialize(credentials: Credentials, data: Array[Byte]): Unit = {
+    val byteStream = new ByteArrayInputStream(data)
+    val dataStream = new DataInputStream(byteStream)
+    credentials.readTokenStorageStream(dataStream)
+  }
 }
 
 private class Clock {
@@ -393,7 +428,7 @@ private case object Relogin extends Command
 private case class UpdateSecretsToTrack(secrets: List[Secret]) extends Command
 private case class StartRefresh(secret: Secret) extends Command
 private case class Renew(expireTime: Long,
-                         tokenToExpireTime: Map[Token[_ <: TokenIdentifier], Long],
+                         tokensToExpireTimes: Map[Token[_ <: TokenIdentifier], Long],
                          secretMeta: ObjectMeta,
                          numConsecutiveErrors: Int) extends Command
 private case class StopRefresh(secret: Secret) extends Command
