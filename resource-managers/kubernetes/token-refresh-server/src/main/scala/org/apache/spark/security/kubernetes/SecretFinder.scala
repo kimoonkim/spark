@@ -20,6 +20,7 @@ import java.lang
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
+import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
 
 import akka.actor.{ActorRef, Scheduler}
@@ -27,9 +28,9 @@ import io.fabric8.kubernetes.api.model.{Secret, SecretList}
 import io.fabric8.kubernetes.client._
 import io.fabric8.kubernetes.client.Watcher.Action
 import io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable
+
 import org.apache.spark.security.kubernetes.constants._
 
-import scala.concurrent.duration.Duration
 
 private trait SecretSelection {
 
@@ -97,5 +98,6 @@ private class SecretWatcher(refreshService: ActorRef) extends Watcher[Secret] wi
 private object SecretFinder {
 
   def apply(refreshService: ActorRef, scheduler: Scheduler, client: KubernetesClient,
-            settings: Settings) = new SecretFinder(refreshService, scheduler, client, settings)
+            settings: Settings): SecretFinder =
+    new SecretFinder(refreshService, scheduler, client, settings)
 }

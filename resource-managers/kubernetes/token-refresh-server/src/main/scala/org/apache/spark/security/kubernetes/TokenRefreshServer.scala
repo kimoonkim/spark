@@ -53,17 +53,19 @@ private class Server(injector: Injector) {
 
 private class Injector {
 
-  def newActorSystem() = ActorSystem("TokenRefreshServer")
+  def newActorSystem(): ActorSystem = ActorSystem("TokenRefreshServer")
 
-  def newKubernetesClient() : KubernetesClient = new DefaultKubernetesClient()
+  def newKubernetesClient(): KubernetesClient = new DefaultKubernetesClient()
 
-  def newSettings() = new Settings()
+  def newSettings(): Settings = new Settings()
 
-  def newTokenRefreshService(actorSystem: ActorSystem, client: KubernetesClient, settings: Settings)
-          = TokenRefreshService(actorSystem, client, settings)
+  def newTokenRefreshService(actorSystem: ActorSystem, client: KubernetesClient,
+                             settings: Settings): ActorRef =
+    TokenRefreshService(actorSystem, client, settings)
 
   def newSecretFinder(refreshService: ActorRef, client: KubernetesClient, scheduler: Scheduler,
-          settings: Settings) = SecretFinder(refreshService, scheduler, client, settings)
+          settings: Settings): SecretFinder =
+    SecretFinder(refreshService, scheduler, client, settings)
 }
 
 private class Settings(config: Config = ConfigFactory.load) {
@@ -99,7 +101,9 @@ private class CommandLine(args: List[String]) {
   }
 
   private def usage(): Unit = {
+    // scalastyle:off println
     println("Usage: TokenRefreshServer [--verbose | -v] [--debug | -d]")
+    // scalastyle:on println
   }
 }
 

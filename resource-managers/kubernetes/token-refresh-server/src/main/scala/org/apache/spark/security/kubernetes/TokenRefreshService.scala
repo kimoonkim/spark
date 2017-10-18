@@ -21,21 +21,22 @@ import java.security.PrivilegedExceptionAction
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.concurrent.duration.Duration
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration.Duration
+
 import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props, Scheduler}
-import com.google.common.annotations.VisibleForTesting
 import io.fabric8.kubernetes.api.model.{ObjectMeta, Secret}
 import io.fabric8.kubernetes.client.KubernetesClient
 import org.apache.commons.codec.binary.Base64
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.hdfs.security.token.delegation.DelegationTokenIdentifier
-import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier
 import org.apache.hadoop.security.{Credentials, UserGroupInformation}
 import org.apache.hadoop.security.token.{Token, TokenIdentifier}
+import org.apache.hadoop.security.token.delegation.AbstractDelegationTokenIdentifier
+
 import org.apache.spark.security.kubernetes.constants._
 
 
@@ -156,19 +157,19 @@ private class TokenRefreshService(kubernetesClient: KubernetesClient, scheduler:
 
   private def getSecretUid(secret: ObjectMeta) = secret.getUid
 
-  @VisibleForTesting
+  // Exposed for testing
   private[kubernetes] def numExtraCancellables() = extraCancellableByClass.size
 
-  @VisibleForTesting
+  // Exposed for testing
   private[kubernetes] def hasExtraCancellable(key: Class[_], expected: Cancellable): Boolean = {
     val value = extraCancellableByClass.get(key)
     value.nonEmpty && expected == value.get
   }
 
-  @VisibleForTesting
+  // Exposed for testing
   private[kubernetes] def numPendingSecretTasks() = secretUidToTaskHandle.size
 
-  @VisibleForTesting
+  // Exposed for testing
   private[kubernetes] def hasSecretTaskCancellable(secretUid: String, expected: Cancellable)
           : Boolean = {
     val value = secretUidToTaskHandle.get(secretUid)
@@ -261,9 +262,10 @@ private class RenewTask(renew: Renew,
                         ugi: UgiUtil,
                         fsUtil: FileSystemUtil) extends Runnable with Logging {
 
-  def this(renew: Renew, hadoopConf: Configuration, refreshService: ActorRef, client: KubernetesClient,
-    clock: Clock) = this(renew, hadoopConf, refreshService, client, clock,
-    ugi = new UgiUtil, fsUtil = new FileSystemUtil)
+  def this(renew: Renew, hadoopConf: Configuration, refreshService: ActorRef,
+           client: KubernetesClient, clock: Clock) =
+    this(renew, hadoopConf, refreshService, client, clock, ugi = new UgiUtil,
+      fsUtil = new FileSystemUtil)
 
   private var hasError = false
 
