@@ -46,10 +46,11 @@ Below is a list of the submodules for this cluster manager and what they do.
 # Building Extra Submodules for Spark with Kubernetes
 
 There are non-core extra submodules such as token-refresh-server. To build
-those, use the `kubernetes-extra` profile when invoking Maven. For example,
-to build the token-refresh-server submodule:
+those, use the `kubernetes-*-extra` profiles like `kubernetes-hdfs-extra`
+when invoking Maven. For example, to build the token-refresh-server submodule:
 
-    build/mvn package -Pkubernetes-extra -pl resource-managers/kubernetes/token-refresh-rver -am
+    build/mvn package -Pkubernetes-hdfs-extra  \
+        -pl resource-managers/kubernetes/token-refresh-server -am
 
 Some of these submodules are helper Kubernetes services. They need not be part
 of the Spark distribution. The distribution build script will not include

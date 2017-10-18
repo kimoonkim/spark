@@ -2620,9 +2620,9 @@
     </profile>
 
     <profile>
-      <!-- Extra Kubernetes modules that should be built regularly, but
-           may not need to be part of the Spark distribution. -->
-      <id>kubernetes-extra</id>
+      <!-- Extra Kubernetes modules for HDFS support. They should be built
+           regularly, but may not need to be part of the Spark distribution. -->
+      <id>kubernetes-hdfs-extra</id>
       <modules>
         <!-- Auxiliary service for refreshing Hadoop tokens. This should not be
              part of the Spark distribution -->
