@@ -52,6 +52,13 @@
       <artifactId>hadoop-client</artifactId>
     </dependency>
     <dependency>
+      <!-- Add codehaus jackson back that the root pom.xml excluded. It is
+           needed by Hadoop 2.7 Token.decodeIdentifier method. -->
+      <groupId>org.codehaus.jackson</groupId>
+      <artifactId>jackson-mapper-asl</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>commons-logging</groupId>
       <artifactId>commons-logging</artifactId>
       <version>${commons-logging.version}</version>
